@@ -1,10 +1,9 @@
 # PDF Bookmark Generator with VLM
 
-A CLI tool for scanned (image-only) PDFs that:
+A CLI tool for scanned (image-only) PDFs with a full extract-then-apply workflow:
 
-1. Renders specified Table of Contents (TOC) pages into images.
-2. Uses a Vision Language Model (VLM) to recognize the hierarchical TOC structure.
-3. Injects bookmarks into the PDF using PyMuPDF.
+1. Extract TOC JSON from TOC page images using a VLM.
+2. Apply TOC JSON to a PDF as bookmarks using PyMuPDF.
 
 ## Installation
 
@@ -16,29 +15,48 @@ uv sync
 
 ## CLI Usage
 
+The CLI now provides two subcommands:
+
+- `extract`: Run VLM recognition and save TOC JSON.
+- `apply`: Load TOC JSON and write bookmarks into a PDF.
+
+### Extract TOC JSON
+
 ```bash
-uv run pdf-bookmark INPUT_PDF OUTPUT_PDF \
+uv run pdf-bookmark extract INPUT_PDF OUTPUT_JSON \
 	--toc-start 5 \
-	--toc-end 9 \
+	--toc-end 9
+```
+
+Options:
+
+- `INPUT_PDF`: Path to the source PDF.
+- `OUTPUT_JSON`: Path to save extracted TOC JSON.
+- `--toc-start`: The first TOC page in the PDF (0-based, inclusive).
+- `--toc-end`: The last TOC page in the PDF (0-based, inclusive).
+- `--api-key`: Optional. VLM API Key (defaults to `DASHSCOPE_API_KEY`).
+- `--base-url`: Optional. API endpoint (defaults to DashScope).
+- `--model`: Optional. VLM model name.
+- `--dpi`: Optional. Render DPI for TOC pages (default: `220`).
+- `--cache-dir`: Optional. Directory for TOC JSON cache (default: `cache`).
+- `--overwrite-cache`: Optional. Ignore existing cache and force new VLM extraction.
+
+### Apply TOC JSON to PDF
+
+```bash
+uv run pdf-bookmark apply INPUT_PDF OUTPUT_PDF \
+	--toc-json toc.json \
 	--page-offset 12
 ```
 
-### Arguments
+Options:
 
 - `INPUT_PDF`: Path to the source PDF.
 - `OUTPUT_PDF`: Path where the bookmarked PDF will be saved.
-- `--toc-start`: The first page of the TOC in the PDF (0-based index, inclusive).
-- `--toc-end`: The last page of the TOC in the PDF (0-based index, inclusive).
-- `--page-offset`: The offset to convert book page numbers to PDF page indices:
+- `--toc-json`: Path to the TOC JSON file (from `extract` or user-provided).
+- `--page-offset`: Offset to convert book page numbers to PDF page indices:
 
 	`pdf_page_index = book_page + page_offset`
-
-- `--api-key`: Optional. VLM API Key (defaults to `DASHSCOPE_API_KEY` environment variable).
-- `--base-url`: Optional. API endpoint (defaults to DashScope).
-- `--model`: Optional. VLM model name (defaults to `qwen3.5-omni-plus`).
-- `--dpi`: Optional. Resolution for rendering TOC pages (defaults to `220`).
-- `--cache-dir`: Optional. Directory to store recognized TOC JSON (defaults to `cache`).
-- `--overwrite-cache`: Optional. Ignore existing cache and call VLM again.
 
 ## API Configuration
 
@@ -75,4 +93,4 @@ The tool expects a strict JSON array from the VLM:
 
 - **Inaccurate Recognition**: Try increasing `--dpi` or using a more capable `--model`.
 - **Page Out of Range**: Usually indicates an incorrect `--page-offset`.
-- **Cache Hit**: The program skips VLM calls if a matching cache is found in `--cache-dir`. Use `--overwrite-cache` to force a re-scan.
+- **Cache Hit**: `extract` skips VLM calls if a matching cache exists in `--cache-dir`. Use `--overwrite-cache` to force re-extraction.
