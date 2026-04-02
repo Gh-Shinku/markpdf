@@ -23,7 +23,7 @@ The CLI now provides two subcommands:
 ### Extract TOC JSON
 
 ```bash
-uv run pdf-bookmark extract INPUT_PDF OUTPUT_JSON \
+uv run pdf-bookmark extract INPUT_PDF [OUTPUT_JSON] \
 	--toc-start 5 \
 	--toc-end 9
 ```
@@ -31,7 +31,7 @@ uv run pdf-bookmark extract INPUT_PDF OUTPUT_JSON \
 Options:
 
 - `INPUT_PDF`: Path to the source PDF.
-- `OUTPUT_JSON`: Path to save extracted TOC JSON.
+- `OUTPUT_JSON`: Optional path to save extracted TOC JSON. If omitted, extraction result is stored in cache only.
 - `--toc-start`: The first TOC page in the PDF (0-based, inclusive).
 - `--toc-end`: The last TOC page in the PDF (0-based, inclusive).
 - `--api-key`: Optional. VLM API Key (defaults to `DASHSCOPE_API_KEY`).
@@ -40,6 +40,22 @@ Options:
 - `--dpi`: Optional. Render DPI for TOC pages (default: `220`).
 - `--cache-dir`: Optional. Directory for TOC JSON cache (default: `cache`).
 - `--overwrite-cache`: Optional. Ignore existing cache and force new VLM extraction.
+- `--mode`: Optional. `tree` or `flat` extraction strategy (default: `tree`).
+- `--auto-apply`: Optional. Automatically apply extracted TOC and export bookmarked PDF.
+- `--apply-output-pdf`: Required when `--auto-apply` is set.
+- `--page-offset`: Required when `--auto-apply` is set.
+
+Example: extract and export in one command
+
+```bash
+uv run pdf-bookmark extract INPUT_PDF \
+	--toc-start 5 \
+	--toc-end 9 \
+	--mode flat \
+	--auto-apply \
+	--apply-output-pdf OUTPUT_PDF \
+	--page-offset 12
+```
 
 ### Apply TOC JSON to PDF
 
@@ -92,5 +108,6 @@ The tool expects a strict JSON array from the VLM:
 ## Troubleshooting
 
 - **Inaccurate Recognition**: Try increasing `--dpi` or using a more capable `--model`.
+- **Mode Recommendation**: For TOCs with clear numbering/hierarchy patterns (for example `1`, `1.1`, `1.1.1`), prefer `--mode flat`.
 - **Page Out of Range**: Usually indicates an incorrect `--page-offset`.
 - **Cache Hit**: `extract` skips VLM calls if a matching cache exists in `--cache-dir`. Use `--overwrite-cache` to force re-extraction.

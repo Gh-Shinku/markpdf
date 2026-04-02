@@ -77,9 +77,21 @@ def _flatten_to_pymupdf_toc(
                 return child_page
         return None
 
+    def resolve_next_sibling_book_page(nodes: list[TocItem], start_index: int) -> int | None:
+        for next_node in nodes[start_index + 1 :]:
+            next_page = resolve_node_book_page(next_node)
+            if next_page is not None:
+                return next_page
+        return None
+
     def walk(nodes: list[TocItem], level: int) -> None:
-        for node in nodes:
+        for index, node in enumerate(nodes):
             resolved_book_page = resolve_node_book_page(node)
+            if resolved_book_page is None:
+                # Fallback: for heading-like nodes (e.g. Part I/II) that have
+                # no page and no parsed children, use the first page from
+                # following sibling nodes.
+                resolved_book_page = resolve_next_sibling_book_page(nodes, index)
             if resolved_book_page is None:
                 raise ValueError(
                     "Cannot resolve page for node (missing page and descendants): "

@@ -47,7 +47,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Extract TOC JSON from PDF TOC pages using VLM",
     )
     extract_parser.add_argument("input_pdf", type=Path, help="Input PDF path")
-    extract_parser.add_argument("output_json", type=Path, help="Output TOC JSON path")
+    extract_parser.add_argument(
+        "output_json",
+        type=Path,
+        nargs="?",
+        default=None,
+        help="Optional output TOC JSON path (if omitted, only cache is written)",
+    )
     extract_parser.add_argument(
         "--toc-start",
         type=int,
@@ -92,6 +98,32 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Overwrite existing local TOC cache and call VLM again",
     )
+    extract_parser.add_argument(
+        "--mode",
+        choices=["tree", "flat"],
+        default="tree",
+        help="Extraction strategy: direct tree extraction or smart flat extraction",
+    )
+    extract_parser.add_argument(
+        "--auto-apply",
+        action="store_true",
+        help="Automatically apply extracted TOC to export a bookmarked PDF",
+    )
+    extract_parser.add_argument(
+        "--apply-output-pdf",
+        type=Path,
+        default=None,
+        help="Output PDF path used by --auto-apply",
+    )
+    extract_parser.add_argument(
+        "--page-offset",
+        type=int,
+        default=None,
+        help=(
+            "Offset for PDF bookmark export when using --auto-apply: "
+            "pdf_page_index = book_page + page_offset"
+        ),
+    )
 
     apply_parser = subparsers.add_parser(
         "apply",
@@ -125,6 +157,11 @@ def _validate_extract_args(args: argparse.Namespace) -> None:
         raise ValueError("--toc-start and --toc-end must be >= 0")
     if args.toc_start > args.toc_end:
         raise ValueError("--toc-start must be <= --toc-end")
+    if args.auto_apply:
+        if args.apply_output_pdf is None:
+            raise ValueError("--auto-apply requires --apply-output-pdf")
+        if args.page_offset is None:
+            raise ValueError("--auto-apply requires --page-offset")
 
 
 def _validate_apply_args(args: argparse.Namespace) -> None:
@@ -135,7 +172,13 @@ def _validate_apply_args(args: argparse.Namespace) -> None:
 
 
 def run_extract(args: argparse.Namespace) -> int:
-    progress = ProgressReporter(total_steps=4)
+    total_steps = 3
+    if args.output_json is not None:
+        total_steps += 1
+    if args.auto_apply:
+        total_steps += 1
+
+    progress = ProgressReporter(total_steps=total_steps)
     progress.step("Validating extract arguments")
     _validate_extract_args(args)
 
@@ -148,7 +191,7 @@ def run_extract(args: argparse.Namespace) -> int:
             raise ValueError(f"TOC end index {args.toc_end} out of range (page_count={doc.page_count})")
 
     progress.step("Extracting TOC JSON")
-    toc_json, cache_file, loaded_from_cache = extract_toc_json(
+    toc_json, cache_file, loaded_from_cache, raw_cache_file = extract_toc_json(
         input_pdf=args.input_pdf,
         toc_start=args.toc_start,
         toc_end=args.toc_end,
@@ -158,22 +201,41 @@ def run_extract(args: argparse.Namespace) -> int:
         dpi=args.dpi,
         cache_dir=args.cache_dir,
         overwrite_cache=args.overwrite_cache,
+        mode=args.mode,
         on_page_rendered=lambda current, total: progress.info(
             f"Rendered TOC page image {current}/{total}"
         ),
     )
 
-    progress.step("Writing extracted JSON file")
-    args.output_json.parent.mkdir(parents=True, exist_ok=True)
-    args.output_json.write_text(
-        json.dumps(toc_json, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    if args.output_json is not None:
+        progress.step("Writing extracted JSON file")
+        args.output_json.parent.mkdir(parents=True, exist_ok=True)
+        args.output_json.write_text(
+            json.dumps(toc_json, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    if args.auto_apply:
+        progress.step("Applying bookmarks to output PDF")
+        bookmark_count = apply_toc_to_pdf(
+            input_pdf=args.input_pdf,
+            output_pdf=args.apply_output_pdf,
+            toc_data=toc_json,
+            page_offset=args.page_offset,
+        )
+        progress.info(f"Auto-applied output PDF: {args.apply_output_pdf}")
+        progress.info(f"Auto-applied bookmark count: {bookmark_count}")
 
     progress.step("Extraction completed")
+    progress.info(f"Extraction mode: {args.mode}")
     progress.info(f"TOC source: {'cache' if loaded_from_cache else 'vlm'}")
     progress.info(f"Cache file: {cache_file}")
-    progress.info(f"Output JSON: {args.output_json}")
+    if raw_cache_file is not None:
+        progress.info(f"Flat raw cache file: {raw_cache_file}")
+    if args.output_json is not None:
+        progress.info(f"Output JSON: {args.output_json}")
+    else:
+        progress.info("Output JSON: skipped (cache-only mode)")
     progress.info(f"Top-level entries: {len(toc_json)}")
     return 0
 
