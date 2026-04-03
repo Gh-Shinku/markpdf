@@ -41,6 +41,8 @@ Options:
 - `--cache-dir`: Optional. Directory for TOC JSON cache (default: `cache`).
 - `--overwrite-cache`: Optional. Ignore existing cache and force new VLM extraction.
 - `--mode`: Optional. `tree` or `flat` extraction strategy (default: `tree`).
+- `--rescan`: Optional. Only for `--mode flat`. Re-run recognition for selected TOC pages using per-page cache.
+- `--pages`: Optional. Used with `--rescan`. 1-based page indexes in TOC slice, e.g. `5,8-10`.
 - `--auto-apply`: Optional. Automatically apply extracted TOC and export bookmarked PDF.
 - `--apply-output-pdf`: Required when `--auto-apply` is set.
 - `--page-offset`: Required when `--auto-apply` is set.
@@ -55,6 +57,17 @@ uv run pdf-bookmark extract INPUT_PDF \
 	--auto-apply \
 	--apply-output-pdf OUTPUT_PDF \
 	--page-offset 12
+```
+
+Example: partial rescan in flat mode (only re-run selected TOC images)
+
+```bash
+uv run pdf-bookmark extract INPUT_PDF \
+	--toc-start 5 \
+	--toc-end 9 \
+	--mode flat \
+	--rescan \
+	--pages 4-5
 ```
 
 ### Apply TOC JSON to PDF
@@ -111,3 +124,4 @@ The tool expects a strict JSON array from the VLM:
 - **Mode Recommendation**: For TOCs with clear numbering/hierarchy patterns (for example `1`, `1.1`, `1.1.1`), prefer `--mode flat`.
 - **Page Out of Range**: Usually indicates an incorrect `--page-offset`.
 - **Cache Hit**: `extract` skips VLM calls if a matching cache exists in `--cache-dir`. Use `--overwrite-cache` to force re-extraction.
+- **Partial Rescan**: In `flat` mode, the tool stores per-page cache files and can refresh only selected pages with `--rescan --pages ...`, then rebuild final TOC JSON.
