@@ -11,7 +11,7 @@ from typing import Callable
 import fitz
 
 from .extractor import extract_toc_json
-from .writer import apply_toc_to_pdf, load_toc_json_file
+from .writer import apply_toc_to_pdf, load_toc_json_file, remove_ocr_layer
 
 
 class ProgressReporter:
@@ -253,6 +253,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    remove_ocr_parser = subparsers.add_parser(
+        "remove-ocr",
+        help="Remove OCR text layer while keeping page images",
+    )
+    remove_ocr_parser.add_argument("input_pdf", type=Path, help="Input PDF path")
+    remove_ocr_parser.add_argument("output_pdf", type=Path, help="Output PDF path")
+
     return parser
 
 
@@ -295,6 +302,11 @@ def _validate_apply_args(args: argparse.Namespace) -> None:
         raise FileNotFoundError(f"Input PDF does not exist: {args.input_pdf}")
     if not args.toc_json.exists():
         raise FileNotFoundError(f"TOC JSON does not exist: {args.toc_json}")
+
+
+def _validate_remove_ocr_args(args: argparse.Namespace) -> None:
+    if not args.input_pdf.exists():
+        raise FileNotFoundError(f"Input PDF does not exist: {args.input_pdf}")
 
 
 def run_extract(args: argparse.Namespace) -> int:
@@ -405,6 +417,19 @@ def run_apply(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_remove_ocr(args: argparse.Namespace) -> int:
+    progress = ProgressReporter(total_steps=3)
+    progress.step("Validating remove-ocr arguments")
+    _validate_remove_ocr_args(args)
+
+    progress.step("Removing OCR text layer from PDF")
+    remove_ocr_layer(input_pdf=args.input_pdf, output_pdf=args.output_pdf)
+
+    progress.step("remove-ocr completed")
+    progress.info(f"Output PDF: {args.output_pdf}")
+    return 0
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -413,6 +438,8 @@ def main() -> int:
             return run_extract(args)
         if args.command == "apply":
             return run_apply(args)
+        if args.command == "remove-ocr":
+            return run_remove_ocr(args)
         raise ValueError(f"Unsupported command: {args.command}")
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)

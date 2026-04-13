@@ -19,6 +19,7 @@ The CLI now provides two subcommands:
 
 - `extract`: Run VLM recognition and save TOC JSON.
 - `apply`: Load TOC JSON and write bookmarks into a PDF.
+- `remove-ocr`: Remove OCR text layer and keep page images unchanged.
 
 ### Extract TOC JSON
 
@@ -86,6 +87,25 @@ Options:
 - `--page-offset`: Offset to convert book page numbers to PDF page indices:
 
 	`pdf_page_index = book_page + page_offset`
+
+### Remove OCR Text Layer
+
+Use this command when you want to strip selectable/searchable OCR text while preserving the scanned page images.
+
+```bash
+uv run pdf-bookmark remove-ocr INPUT_PDF OUTPUT_PDF
+```
+
+Options:
+
+- `INPUT_PDF`: Path to the source PDF.
+- `OUTPUT_PDF`: Path where the OCR-stripped PDF will be saved.
+
+Implementation notes:
+
+- A full-page redaction is applied per page.
+- `images=fitz.PDF_REDACT_IMAGE_NONE` ensures images are not modified.
+- The output is saved with `garbage=4` to clean up deleted OCR text data.
 
 ## API Configuration
 
