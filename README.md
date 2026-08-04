@@ -23,10 +23,10 @@ The CLI now provides two subcommands:
 
 ## Web Workspace
 
-The repository also contains an apply-only web workflow:
+The repository also contains an apply-only web workspace:
 
 - `server/`: FastAPI backend that accepts uploaded PDF and TOC JSON files.
-- `web/`: React + Vite frontend for applying bookmarks and downloading the result.
+- `web/`: React + Vite frontend with a TOC JSON editor and PDF preview pane.
 
 Run the backend:
 
@@ -43,6 +43,9 @@ npm run dev
 ```
 
 Open `http://localhost:5173/`. The Vite dev server proxies `/api/*` to the FastAPI backend.
+
+In the web workspace, upload a source PDF, upload or edit TOC JSON in the editor,
+then use `Preview` to render the generated bookmarked PDF in the preview pane.
 
 ### Extract TOC JSON
 

@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   BookMarked,
@@ -7,6 +7,7 @@ import {
   FileJson,
   FileText,
   Loader2,
+  Play,
   Upload
 } from "lucide-react";
 
@@ -16,10 +17,26 @@ type Status =
   | { kind: "success"; message: string }
   | { kind: "error"; message: string };
 
-type DownloadState = {
+type PdfSource = {
   url: string;
   filename: string;
+  kind: "source" | "generated";
 };
+
+const EMPTY_TOC = `[
+  {
+    "title": "Contents",
+    "page": 4,
+    "attribute": "absolute",
+    "children": []
+  },
+  {
+    "title": "Chapter 1",
+    "page": 1,
+    "attribute": "relative",
+    "children": []
+  }
+]`;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) {
@@ -51,43 +68,96 @@ async function parseError(response: Response): Promise<string> {
   }
 }
 
+function makeBookmarkedFilename(file: File): string {
+  return `${file.name.replace(/\.pdf$/i, "")}_bookmarked.pdf`;
+}
+
 export function App() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [jsonFile, setJsonFile] = useState<File | null>(null);
+  const [jsonFileName, setJsonFileName] = useState<string | null>(null);
+  const [tocText, setTocText] = useState(EMPTY_TOC);
   const [pageOffset, setPageOffset] = useState("0");
   const [status, setStatus] = useState<Status>({
     kind: "idle",
-    message: "Ready to apply bookmarks"
+    message: "Upload a PDF, edit TOC JSON, then preview the result"
   });
-  const [download, setDownload] = useState<DownloadState | null>(null);
+  const [sourcePdf, setSourcePdf] = useState<PdfSource | null>(null);
+  const [previewPdf, setPreviewPdf] = useState<PdfSource | null>(null);
 
-  const canSubmit = useMemo(
-    () => Boolean(pdfFile && jsonFile && pageOffset.trim() && status.kind !== "loading"),
-    [jsonFile, pageOffset, pdfFile, status.kind]
+  const canPreview = useMemo(
+    () => Boolean(pdfFile && tocText.trim() && pageOffset.trim() && status.kind !== "loading"),
+    [pageOffset, pdfFile, status.kind, tocText]
   );
 
   useEffect(() => {
     return () => {
-      if (download) {
-        URL.revokeObjectURL(download.url);
+      if (sourcePdf) {
+        URL.revokeObjectURL(sourcePdf.url);
+      }
+      if (previewPdf && previewPdf.url !== sourcePdf?.url) {
+        URL.revokeObjectURL(previewPdf.url);
       }
     };
-  }, [download]);
+  }, [previewPdf, sourcePdf]);
+
+  function replaceSourcePdf(next: PdfSource | null) {
+    setSourcePdf((previous) => {
+      if (previous) {
+        URL.revokeObjectURL(previous.url);
+      }
+      return next;
+    });
+  }
+
+  function replacePreviewPdf(next: PdfSource | null) {
+    setPreviewPdf((previous) => {
+      if (previous && previous.url !== sourcePdf?.url) {
+        URL.revokeObjectURL(previous.url);
+      }
+      return next;
+    });
+  }
 
   function updatePdf(event: ChangeEvent<HTMLInputElement>) {
-    setPdfFile(event.target.files?.[0] ?? null);
-    setDownload(null);
+    const file = event.target.files?.[0] ?? null;
+    setPdfFile(file);
+    if (!file) {
+      replaceSourcePdf(null);
+      replacePreviewPdf(null);
+      setStatus({ kind: "idle", message: "Upload a PDF to start previewing" });
+      return;
+    }
+
+    const source = {
+      url: URL.createObjectURL(file),
+      filename: file.name,
+      kind: "source" as const
+    };
+    replaceSourcePdf(source);
+    replacePreviewPdf(source);
+    setStatus({ kind: "idle", message: "Source PDF loaded in preview" });
   }
 
-  function updateJson(event: ChangeEvent<HTMLInputElement>) {
-    setJsonFile(event.target.files?.[0] ?? null);
-    setDownload(null);
+  async function updateJson(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      setJsonFileName(null);
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      setTocText(text);
+      setJsonFileName(file.name);
+      setStatus({ kind: "idle", message: "TOC JSON loaded into editor" });
+    } catch {
+      setStatus({ kind: "error", message: "Failed to read TOC JSON file" });
+    }
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!pdfFile || !jsonFile) {
-      setStatus({ kind: "error", message: "Select both a PDF and a TOC JSON file" });
+  async function preview() {
+    if (!pdfFile) {
+      setStatus({ kind: "error", message: "Select a source PDF first" });
       return;
     }
 
@@ -97,17 +167,23 @@ export function App() {
       return;
     }
 
-    if (download) {
-      URL.revokeObjectURL(download.url);
-      setDownload(null);
+    try {
+      JSON.parse(tocText);
+    } catch (error) {
+      setStatus({
+        kind: "error",
+        message: error instanceof Error ? `JSON syntax error: ${error.message}` : "Invalid JSON"
+      });
+      return;
     }
 
+    const tocBlob = new Blob([tocText], { type: "application/json" });
     const formData = new FormData();
     formData.append("pdf", pdfFile);
-    formData.append("toc_json", jsonFile);
+    formData.append("toc_json", tocBlob, jsonFileName ?? "toc.json");
     formData.append("page_offset", String(offset));
 
-    setStatus({ kind: "loading", message: "Applying bookmarks to PDF" });
+    setStatus({ kind: "loading", message: "Generating preview PDF" });
     try {
       const response = await fetch("/api/apply", {
         method: "POST",
@@ -118,124 +194,126 @@ export function App() {
       }
 
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const filename = `${pdfFile.name.replace(/\.pdf$/i, "")}_bookmarked.pdf`;
-      setDownload({ url, filename });
-      setStatus({ kind: "success", message: "Bookmarked PDF is ready" });
+      const nextPreview = {
+        url: URL.createObjectURL(blob),
+        filename: makeBookmarkedFilename(pdfFile),
+        kind: "generated" as const
+      };
+      replacePreviewPdf(nextPreview);
+      setStatus({ kind: "success", message: "Preview PDF updated" });
     } catch (error) {
       setStatus({
         kind: "error",
-        message: error instanceof Error ? error.message : "Failed to apply bookmarks"
+        message: error instanceof Error ? error.message : "Failed to generate preview"
       });
     }
   }
 
   const statusIcon =
     status.kind === "loading" ? (
-      <Loader2 className="spin" size={18} />
+      <Loader2 className="spin" size={17} />
     ) : status.kind === "success" ? (
-      <CheckCircle2 size={18} />
+      <CheckCircle2 size={17} />
     ) : status.kind === "error" ? (
-      <AlertCircle size={18} />
+      <AlertCircle size={17} />
     ) : (
-      <BookMarked size={18} />
+      <BookMarked size={17} />
     );
 
   return (
     <main className="app-shell">
-      <section className="workspace">
-        <div className="title-row">
-          <BookMarked size={30} aria-hidden="true" />
+      <header className="topbar">
+        <div className="brand">
+          <BookMarked size={24} aria-hidden="true" />
           <div>
             <h1>PDF Bookmark Workspace</h1>
-            <p>Apply structured TOC JSON to scanned PDF books.</p>
+            <p>Editor and preview for TOC JSON.</p>
           </div>
         </div>
 
-        <div className="content-grid">
-          <form className="tool-panel" onSubmit={submit}>
-            <label className="file-input">
-              <span className="input-label">
-                <FileText size={18} />
-                Source PDF
-              </span>
-              <input type="file" accept="application/pdf,.pdf" onChange={updatePdf} />
-              <span className="file-name">{selectedFileLabel(pdfFile)}</span>
-            </label>
+        <div className="toolbar">
+          <label className="upload-control">
+            <FileText size={17} />
+            <span>PDF</span>
+            <input type="file" accept="application/pdf,.pdf" onChange={updatePdf} />
+          </label>
+          <label className="upload-control">
+            <FileJson size={17} />
+            <span>JSON</span>
+            <input type="file" accept="application/json,.json" onChange={updateJson} />
+          </label>
+          <label className="offset-control">
+            <span>Offset</span>
+            <input
+              type="number"
+              step="1"
+              value={pageOffset}
+              onChange={(event) => setPageOffset(event.target.value)}
+            />
+          </label>
+          <button className="primary-action" type="button" disabled={!canPreview} onClick={preview}>
+            {status.kind === "loading" ? <Loader2 className="spin" size={17} /> : <Play size={17} />}
+            Preview
+          </button>
+          {previewPdf?.kind === "generated" ? (
+            <a className="download-action" href={previewPdf.url} download={previewPdf.filename}>
+              <Download size={17} />
+              Download
+            </a>
+          ) : null}
+        </div>
+      </header>
 
-            <label className="file-input">
-              <span className="input-label">
-                <FileJson size={18} />
-                TOC JSON
-              </span>
-              <input type="file" accept="application/json,.json" onChange={updateJson} />
-              <span className="file-name">{selectedFileLabel(jsonFile)}</span>
-            </label>
+      <section className="workspace-grid">
+        <section className="editor-pane">
+          <div className="pane-header">
+            <div>
+              <h2>TOC JSON</h2>
+              <p>{jsonFileName ?? "Untitled TOC"}</p>
+            </div>
+            <div className="file-meta">
+              <Upload size={15} />
+              <span>{selectedFileLabel(pdfFile)}</span>
+            </div>
+          </div>
 
-            <label className="number-field">
-              <span>Page offset</span>
-              <input
-                type="number"
-                step="1"
-                value={pageOffset}
-                onChange={(event) => setPageOffset(event.target.value)}
-              />
-            </label>
+          <textarea
+            className="json-editor"
+            spellCheck={false}
+            value={tocText}
+            onChange={(event) => setTocText(event.target.value)}
+            aria-label="TOC JSON editor"
+          />
 
-            <div className={`status-line ${status.kind}`}>
+          <div className="schema-footer">
+            <span>relative PDF page = page + offset</span>
+            <span>absolute page = one-based PDF page</span>
+          </div>
+        </section>
+
+        <section className="preview-pane">
+          <div className="pane-header">
+            <div>
+              <h2>PDF Preview</h2>
+              <p>{previewPdf ? previewPdf.filename : "No PDF selected"}</p>
+            </div>
+            <div className={`status-pill ${status.kind}`}>
               {statusIcon}
               <span>{status.message}</span>
             </div>
+          </div>
 
-            <div className="actions">
-              <button type="submit" disabled={!canSubmit}>
-                {status.kind === "loading" ? <Loader2 className="spin" size={18} /> : <Upload size={18} />}
-                Apply bookmarks
-              </button>
-              {download ? (
-                <a className="download-link" href={download.url} download={download.filename}>
-                  <Download size={18} />
-                  Download PDF
-                </a>
-              ) : null}
-            </div>
-          </form>
-
-          <aside className="details-panel">
-            <div>
-              <h2>Input Contract</h2>
-              <p>JSON must be a top-level array of bookmark nodes.</p>
-            </div>
-            <pre>{`[
-  {
-    "title": "Contents",
-    "page": 4,
-    "attribute": "absolute",
-    "children": []
-  },
-  {
-    "title": "Chapter 1",
-    "page": 1,
-    "attribute": "relative",
-    "children": []
-  }
-]`}</pre>
-            <dl>
-              <div>
-                <dt>PDF</dt>
-                <dd>{selectedFileLabel(pdfFile)}</dd>
+          <div className="pdf-frame">
+            {previewPdf ? (
+              <iframe title="PDF preview" src={previewPdf.url} />
+            ) : (
+              <div className="empty-preview">
+                <FileText size={34} />
+                <span>Select a PDF to render it here.</span>
               </div>
-              <div>
-                <dt>JSON</dt>
-                <dd>{selectedFileLabel(jsonFile)}</dd>
-              </div>
-              <div>
-                <dt>Mapping</dt>
-                <dd>relative PDF page: page + {pageOffset || "0"} · absolute: page</dd>
-              </div>
-            </dl>
-          </aside>
-        </div>
+            )}
+          </div>
+        </section>
       </section>
     </main>
   );
