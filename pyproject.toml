@@ -9,6 +9,11 @@ dependencies = [
     "pymupdf>=1.27.2.2",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
 [project.scripts]
 pdf-bookmark = "bookmark.cli:main"
 

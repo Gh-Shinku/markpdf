@@ -10,8 +10,9 @@ from typing import Callable
 
 import fitz
 
+from .core import apply_toc_to_pdf, load_toc_json_file
 from .extractor import extract_toc_json
-from .writer import apply_toc_to_pdf, load_toc_json_file, remove_ocr_layer
+from .writer import remove_ocr_layer
 
 
 class ProgressReporter:
