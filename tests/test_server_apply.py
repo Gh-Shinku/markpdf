@@ -31,10 +31,22 @@ def test_apply_returns_bookmarked_pdf(tmp_path) -> None:
     _make_pdf(input_pdf)
     toc_json = [
         {
+            "title": "Contents",
+            "page": 1,
+            "attribute": "absolute",
+            "children": [],
+        },
+        {
             "title": "Chapter 1",
             "page": 0,
+            "attribute": "relative",
             "children": [
-                {"title": "Section 1.1", "page": 2, "children": []},
+                {
+                    "title": "Section 1.1",
+                    "page": 2,
+                    "attribute": "relative",
+                    "children": [],
+                },
             ],
         }
     ]
@@ -59,6 +71,7 @@ def test_apply_returns_bookmarked_pdf(tmp_path) -> None:
     output_pdf.write_bytes(response.content)
     with fitz.open(output_pdf) as doc:
         assert doc.get_toc() == [
+            [1, "Contents", 1],
             [1, "Chapter 1", 2],
             [2, "Section 1.1", 4],
         ]
@@ -101,3 +114,25 @@ def test_apply_rejects_out_of_range_page(tmp_path) -> None:
 
     assert response.status_code == 400
     assert "out of range" in response.json()["detail"]
+
+
+def test_apply_rejects_invalid_attribute(tmp_path) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf)
+    toc_json = [{"title": "Chapter 1", "page": 1, "attribute": "pdf", "children": []}]
+
+    response = client.post(
+        "/api/apply",
+        data={"page_offset": "0"},
+        files={
+            "pdf": ("input.pdf", input_pdf.read_bytes(), "application/pdf"),
+            "toc_json": (
+                "toc.json",
+                json.dumps(toc_json).encode("utf-8"),
+                "application/json",
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Invalid attribute" in response.json()["detail"]

@@ -228,7 +228,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Offset for PDF bookmark export when using --auto-apply: "
-            "pdf_page_index = book_page + page_offset"
+            "relative pdf_page_index = page + page_offset; "
+            "absolute pages are one-based PDF page numbers and ignore it"
         ),
     )
 
@@ -249,8 +250,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         required=True,
         help=(
-            "Offset between PDF page index and book page number: "
-            "pdf_page_index = book_page + page_offset"
+            "Offset for relative TOC pages: pdf_page_index = page + page_offset; "
+            "absolute TOC pages are one-based PDF page numbers and ignore it"
         ),
     )
 

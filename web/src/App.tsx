@@ -208,8 +208,15 @@ export function App() {
             </div>
             <pre>{`[
   {
+    "title": "Contents",
+    "page": 4,
+    "attribute": "absolute",
+    "children": []
+  },
+  {
     "title": "Chapter 1",
     "page": 1,
+    "attribute": "relative",
     "children": []
   }
 ]`}</pre>
@@ -224,7 +231,7 @@ export function App() {
               </div>
               <div>
                 <dt>Mapping</dt>
-                <dd>pdf_page_index = book_page + {pageOffset || "0"}</dd>
+                <dd>relative: page + {pageOffset || "0"} · absolute: PDF page number</dd>
               </div>
             </dl>
           </aside>

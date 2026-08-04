@@ -20,19 +20,32 @@ def test_apply_toc_to_pdf_writes_bookmarks(tmp_path) -> None:
         output_pdf=output_pdf,
         toc_data=[
             {
+                "title": "Contents",
+                "page": 1,
+                "attribute": "absolute",
+                "children": [],
+            },
+            {
                 "title": "Chapter 1",
                 "page": 0,
+                "attribute": "relative",
                 "children": [
-                    {"title": "Section 1.1", "page": 2, "children": []},
+                    {
+                        "title": "Section 1.1",
+                        "page": 2,
+                        "attribute": "relative",
+                        "children": [],
+                    },
                 ],
             }
         ],
         page_offset=1,
     )
 
-    assert bookmark_count == 2
+    assert bookmark_count == 3
     with fitz.open(output_pdf) as output_doc:
         assert output_doc.get_toc() == [
+            [1, "Contents", 1],
             [1, "Chapter 1", 2],
             [2, "Section 1.1", 4],
         ]

@@ -111,6 +111,8 @@ Options:
 
 	`pdf_page_index = book_page + page_offset`
 
+	The offset applies only to TOC nodes whose `attribute` is `relative`.
+
 ### Remove OCR Text Layer
 
 Use this command when you want to strip selectable/searchable OCR text while preserving the scanned page images.
@@ -145,10 +147,12 @@ The tool expects a strict JSON array from the VLM:
 	{
 		"title": "Chapter 1: Introduction",
 		"page": 1,
+		"attribute": "relative",
 		"children": [
 			{
 				"title": "1.1 Background",
 				"page": 3,
+				"attribute": "relative",
 				"children": []
 			}
 		]
@@ -157,14 +161,17 @@ The tool expects a strict JSON array from the VLM:
 ```
 
 ### Notes on Format:
-- `page`: Must be the **actual page number printed in the book**, not the PDF index.
-- If a node has no page (e.g., a "Part" header), use `null`. The tool will automatically resolve the target page from its first child.
+- `page`: Page number for this entry. Its meaning depends on `attribute`.
+- `attribute`: Optional. Use `relative` for logical book page numbers and `absolute` for one-based PDF page numbers. If omitted, `relative` is used.
+- `relative`: Converted with `pdf_page_index = page + page_offset`.
+- `absolute`: Converted with `pdf_page_index = page - 1`. `page_offset` is ignored.
+- If a node has no page (e.g. a "Part" header), use `null`. The tool will automatically resolve the target page and attribute from its first child or following sibling.
 - `children`: Must always be present (use `[]` if empty).
 
 ## Troubleshooting
 
 - **Inaccurate Recognition**: Try increasing `--dpi` or using a more capable `--model`.
 - **Mode Recommendation**: For TOCs with clear numbering/hierarchy patterns (for example `1`, `1.1`, `1.1.1`), prefer `--mode flat`.
-- **Page Out of Range**: Usually indicates an incorrect `--page-offset`.
+- **Page Out of Range**: Usually indicates an incorrect `--page-offset` for relative pages or an invalid absolute PDF page number.
 - **Cache Hit**: `extract` skips VLM calls if a matching cache exists in `--cache-dir`. Use `--overwrite-cache` to force re-extraction.
 - **Partial Rescan**: In `flat` mode, the tool stores per-page cache files and can refresh only selected pages with `--rescan --pages ...`, then rebuild final TOC JSON.

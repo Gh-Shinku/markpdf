@@ -42,6 +42,7 @@ def prune_null_page_nodes(toc_data: list[dict[str, Any]]) -> list[dict[str, Any]
                 {
                     "title": node.get("title"),
                     "page": page,
+                    "attribute": node.get("attribute", "relative"),
                     "children": children,
                 }
             )
@@ -173,6 +174,7 @@ class TOCAssembler:
                 {
                     "title": item["text"],
                     "page": item["page"],
+                    "attribute": "relative",
                     "children": [],
                     "_level": level,
                 }
@@ -192,6 +194,7 @@ class TOCAssembler:
             node = {
                 "title": item["title"],
                 "page": item["page"],
+                "attribute": item["attribute"],
                 "children": [],
             }
 
@@ -257,14 +260,15 @@ class TreeExtractor(BaseExtractor):
             "1. **Hierarchical Logic**: Determine levels based on indentation, font size, and numbering (e.g., 1.1 is a child of 1).\n"
             "2. **Content**: Extract the exact title text. Do not include leading dots (......) or filler characters.\n"
             "3. **Page Numbers**: Use the printed page numbers shown in the image. Set to null if not visible.\n"
-            "4. **Completeness**: Every single entry visible in the images must be included. Do not summarize.\n"
-            "5. **Empty Children**: The 'children' key must be an empty list [] if no sub-items exist.\n\n"
+            "4. **Page Attribute**: Set 'attribute' to 'relative' for normal printed book page numbers.\n"
+            "5. **Completeness**: Every single entry visible in the images must be included. Do not summarize.\n"
+            "6. **Empty Children**: The 'children' key must be an empty list [] if no sub-items exist.\n\n"
             "### Output Format (Strict JSON):\n"
             "Return ONLY a valid JSON array at the top level. No markdown blocks, no preamble, no explanations.\n"
             "Example Structure:\n"
             "[\n"
-            '  {"title": "Chapter 1", "page": 1, "children": [\n'
-            '    {"title": "1.1 Sub-section", "page": 2, "children": []}\n'
+            '  {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": [\n'
+            '    {"title": "1.1 Sub-section", "page": 2, "attribute": "relative", "children": []}\n'
             "  ]}\n"
             "]"
         )
