@@ -5,8 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.124.0",
     "openai>=2.30.0",
     "pymupdf>=1.27.2.2",
+    "python-multipart>=0.0.20",
+    "uvicorn>=0.38.0",
 ]
 
 [dependency-groups]
@@ -26,3 +29,9 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    ".",
+    "src",
+]

@@ -21,6 +21,29 @@ The CLI now provides two subcommands:
 - `apply`: Load TOC JSON and write bookmarks into a PDF.
 - `remove-ocr`: Remove OCR text layer and keep page images unchanged.
 
+## Web Workspace
+
+The repository also contains an apply-only web workflow:
+
+- `server/`: FastAPI backend that accepts uploaded PDF and TOC JSON files.
+- `web/`: React + Vite frontend for applying bookmarks and downloading the result.
+
+Run the backend:
+
+```bash
+uv run uvicorn server.bookmark_server.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Run the frontend:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173/`. The Vite dev server proxies `/api/*` to the FastAPI backend.
+
 ### Extract TOC JSON
 
 ```bash

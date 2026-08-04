@@ -13,3 +13,11 @@ wheels/
 data/
 cache/
 backup/
+
+# runtime
+.runtime/
+
+# web
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
