@@ -39,7 +39,7 @@ def parse_toc_items(data: Any) -> list[TocItem]:
 
         if not isinstance(title, str) or not title.strip():
             raise ValueError(f"Invalid title in node: {node!r}")
-        if page is not None and not isinstance(page, int):
+        if page is not None and (not isinstance(page, int) or page < 1):
             raise ValueError(f"Invalid page in node: {node!r}")
         if attribute not in VALID_PAGE_ATTRIBUTES:
             raise ValueError(f"Invalid attribute in node: {node!r}")
@@ -104,7 +104,7 @@ def flatten_to_pymupdf_toc(
     def convert_to_pdf_index(target: PageTarget) -> int:
         if target.attribute == PAGE_ATTRIBUTE_ABSOLUTE:
             return target.page - 1
-        return target.page + page_offset
+        return target.page + page_offset - 1
 
     def walk(nodes: list[TocItem], level: int) -> None:
         for index, node in enumerate(nodes):

@@ -38,12 +38,12 @@ def test_apply_returns_bookmarked_pdf(tmp_path) -> None:
         },
         {
             "title": "Chapter 1",
-            "page": 0,
+            "page": 1,
             "attribute": "relative",
             "children": [
                 {
                     "title": "Section 1.1",
-                    "page": 2,
+                    "page": 3,
                     "attribute": "relative",
                     "children": [],
                 },

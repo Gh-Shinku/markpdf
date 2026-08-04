@@ -40,6 +40,7 @@ def test_validate_toc_json_structure_normalizes_nested_items() -> None:
         ([[]], "Each TOC node must be an object"),
         ([{"title": " ", "page": 1, "children": []}], "Invalid title"),
         ([{"title": "A", "page": "1", "children": []}], "Invalid page"),
+        ([{"title": "A", "page": 0, "children": []}], "Invalid page"),
         ([{"title": "A", "page": 1, "attribute": "pdf", "children": []}], "Invalid attribute"),
         ([{"title": "A", "page": 1}], "Invalid children"),
     ],
@@ -66,8 +67,8 @@ def test_flatten_to_pymupdf_toc_preserves_levels_and_converts_pages() -> None:
     )
 
     assert flatten_to_pymupdf_toc(items, page_offset=2, pdf_page_count=10) == [
-        [1, "Chapter 1", 4],
-        [2, "Section 1.1", 6],
+        [1, "Chapter 1", 3],
+        [2, "Section 1.1", 5],
     ]
 
 
@@ -81,7 +82,7 @@ def test_flatten_to_pymupdf_toc_uses_absolute_page_without_offset() -> None:
 
     assert flatten_to_pymupdf_toc(items, page_offset=4, pdf_page_count=10) == [
         [1, "Contents", 2],
-        [1, "Chapter 1", 6],
+        [1, "Chapter 1", 5],
     ]
 
 
@@ -99,8 +100,8 @@ def test_flatten_to_pymupdf_toc_resolves_null_page_from_child() -> None:
     )
 
     assert flatten_to_pymupdf_toc(items, page_offset=0, pdf_page_count=10) == [
-        [1, "Part I", 5],
-        [2, "Chapter 1", 5],
+        [1, "Part I", 4],
+        [2, "Chapter 1", 4],
     ]
 
 
@@ -144,7 +145,7 @@ def test_flatten_to_pymupdf_toc_resolves_null_page_from_next_sibling() -> None:
 
 def test_flatten_to_pymupdf_toc_rejects_out_of_range_relative_page() -> None:
     items = parse_toc_items(
-        [{"title": "Chapter 1", "page": 10, "children": []}]
+        [{"title": "Chapter 1", "page": 11, "children": []}]
     )
 
     with pytest.raises(ValueError, match="out of range"):
@@ -158,12 +159,3 @@ def test_flatten_to_pymupdf_toc_rejects_out_of_range_absolute_page() -> None:
 
     with pytest.raises(ValueError, match="attribute=absolute"):
         flatten_to_pymupdf_toc(items, page_offset=-8, pdf_page_count=10)
-
-
-def test_flatten_to_pymupdf_toc_rejects_zero_absolute_page() -> None:
-    items = parse_toc_items(
-        [{"title": "Contents", "page": 0, "attribute": "absolute", "children": []}]
-    )
-
-    with pytest.raises(ValueError, match="attribute=absolute"):
-        flatten_to_pymupdf_toc(items, page_offset=0, pdf_page_count=10)

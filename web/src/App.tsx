@@ -231,7 +231,7 @@ export function App() {
               </div>
               <div>
                 <dt>Mapping</dt>
-                <dd>relative: page + {pageOffset || "0"} · absolute: PDF page number</dd>
+                <dd>relative PDF page: page + {pageOffset || "0"} · absolute: page</dd>
               </div>
             </dl>
           </aside>

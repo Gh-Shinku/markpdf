@@ -107,9 +107,9 @@ Options:
 - `INPUT_PDF`: Path to the source PDF.
 - `OUTPUT_PDF`: Path where the bookmarked PDF will be saved.
 - `--toc-json`: Path to the TOC JSON file (from `extract` or user-provided).
-- `--page-offset`: Offset to convert book page numbers to PDF page indices:
+- `--page-offset`: Offset to convert relative book page numbers to one-based PDF page numbers:
 
-	`pdf_page_index = book_page + page_offset`
+	`pdf_page_number = logical_book_page + page_offset`
 
 	The offset applies only to TOC nodes whose `attribute` is `relative`.
 
@@ -163,8 +163,8 @@ The tool expects a strict JSON array from the VLM:
 ### Notes on Format:
 - `page`: Page number for this entry. Its meaning depends on `attribute`.
 - `attribute`: Optional. Use `relative` for logical book page numbers and `absolute` for one-based PDF page numbers. If omitted, `relative` is used.
-- `relative`: Converted with `pdf_page_index = page + page_offset`.
-- `absolute`: Converted with `pdf_page_index = page - 1`. `page_offset` is ignored.
+- `relative`: Converted with `pdf_page_number = page + page_offset`.
+- `absolute`: `page` is already the one-based PDF page number. `page_offset` is ignored.
 - If a node has no page (e.g. a "Part" header), use `null`. The tool will automatically resolve the target page and attribute from its first child or following sibling.
 - `children`: Must always be present (use `[]` if empty).
 
