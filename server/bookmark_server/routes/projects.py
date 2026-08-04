@@ -21,6 +21,10 @@ class TocPayload(BaseModel):
     toc_json: str
 
 
+class ProjectMetadataPayload(BaseModel):
+    page_offset: int
+
+
 class ValidatePayload(BaseModel):
     toc_json: str
     page_offset: int = 0
@@ -158,6 +162,13 @@ def save_project_toc(project_id: str, payload: TocPayload) -> dict[str, Any]:
     _project_or_404(project_id)
     metadata = store.save_toc_text(project_id, payload.toc_json)
     return {"project": metadata, "toc_json": payload.toc_json}
+
+
+@router.put("/projects/{project_id}/metadata")
+def update_project_metadata(project_id: str, payload: ProjectMetadataPayload) -> dict[str, Any]:
+    _project_or_404(project_id)
+    metadata = store.update_project_metadata(project_id, payload.page_offset)
+    return {"project": metadata}
 
 
 @router.post("/projects/{project_id}/validate")

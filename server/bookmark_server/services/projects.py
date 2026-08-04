@@ -136,6 +136,13 @@ class ProjectStore:
         self._write_metadata(project_id, metadata)
         return metadata
 
+    def update_project_metadata(self, project_id: str, page_offset: int) -> dict[str, Any]:
+        metadata = self.get_project(project_id)
+        metadata["page_offset"] = page_offset
+        metadata["updated_at"] = utc_now_iso()
+        self._write_metadata(project_id, metadata)
+        return metadata
+
     def record_validation(
         self,
         project_id: str,

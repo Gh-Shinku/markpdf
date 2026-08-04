@@ -53,7 +53,7 @@ button {
   user-select: none;
 }
 
-.app-shell.resizing .pdf-frame iframe {
+.app-shell.resizing .pdf-frame {
   pointer-events: none;
 }
 
@@ -427,6 +427,14 @@ button.project-row:hover {
   border-bottom: 1px solid var(--border);
 }
 
+.preview-statusbar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
 .json-editor-shell {
   width: 100%;
   min-width: 0;
@@ -472,12 +480,97 @@ button.project-row:hover {
   background: #d7dbe0;
 }
 
-.pdf-frame iframe {
-  display: block;
+.pdf-viewer {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   width: 100%;
   height: 100%;
-  border: 0;
+  min-width: 0;
+  min-height: 0;
+  background: #d7dbe0;
+}
+
+.pdf-viewer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 3px 6px;
+  background: #f7f8fa;
+  border-bottom: 1px solid var(--border);
+}
+
+.pdf-page-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.pdf-page-control input {
+  width: 46px;
+  min-height: 24px;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 1px;
   background: #ffffff;
+  color: #1f2328;
+  text-align: right;
+}
+
+.pdf-toolbar-separator {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.pdf-zoom-label {
+  min-width: 44px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.pdf-viewer-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+  background: #d7dbe0;
+}
+
+.pdf-page-canvas {
+  display: block;
+  margin: 0 auto;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgb(31 35 40 / 22%);
+}
+
+.pdf-viewer-message {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 1;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: #f7f8fa;
+  color: #4b5560;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pdf-viewer-message.error {
+  color: #8a2634;
+  background: #fff1f2;
+  border-color: #e0b5bd;
 }
 
 .modal-backdrop {
@@ -619,6 +712,11 @@ button.project-row:hover {
 
   .status-pill {
     max-width: 100%;
+  }
+
+  .preview-statusbar {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .project-row {

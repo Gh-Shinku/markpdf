@@ -21,7 +21,6 @@ import type {
   SettingsDraft,
   SettingsState,
   Status,
-  ValidationIssue,
   View
 } from "./types";
 import { makeBookmarkedFilename } from "./utils";
@@ -50,7 +49,6 @@ export function App() {
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [tocStart, setTocStart] = useState("1");
   const [tocEnd, setTocEnd] = useState("1");
-  const [dirty, setDirty] = useState(false);
   const [pdfVersion, setPdfVersion] = useState(0);
   const [activeGenerationJobId, setActiveGenerationJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>({
@@ -60,6 +58,10 @@ export function App() {
   const editorRef = useRef<JsonEditorHandle | null>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const isDraggingSplitterRef = useRef(false);
+  const lastSavedTocRef = useRef("");
+  const lastSavedOffsetRef = useRef("0");
+  const tocSaveSequenceRef = useRef(0);
+  const offsetSaveSequenceRef = useRef(0);
   const [splitPercent, setSplitPercent] = useState(DEFAULT_SPLIT_PERCENT);
   const [isResizing, setIsResizing] = useState(false);
   const [previewPdf, setPreviewPdf] = useState<PreviewPdf | null>(null);
@@ -85,18 +87,6 @@ export function App() {
     window.addEventListener("keydown", openEditorSearch, true);
     return () => window.removeEventListener("keydown", openEditorSearch, true);
   }, [view.kind]);
-
-  useEffect(() => {
-    function warnBeforeUnload(event: BeforeUnloadEvent) {
-      if (!dirty) {
-        return;
-      }
-      event.preventDefault();
-    }
-
-    window.addEventListener("beforeunload", warnBeforeUnload);
-    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [dirty]);
 
   useEffect(() => {
     return () => {
@@ -162,6 +152,44 @@ export function App() {
     };
   }, [activeGenerationJobId, project?.id]);
 
+  useEffect(() => {
+    if (view.kind !== "workspace" || !project || tocText === lastSavedTocRef.current) {
+      return;
+    }
+
+    const sequence = tocSaveSequenceRef.current + 1;
+    tocSaveSequenceRef.current = sequence;
+    setStatus({ kind: "loading", message: "Saving TOC JSON" });
+
+    const timeoutId = window.setTimeout(() => {
+      void autosaveTocJson(project.id, tocText, sequence);
+    }, 700);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [project?.id, tocText, view.kind]);
+
+  useEffect(() => {
+    if (view.kind !== "workspace" || !project || pageOffset === lastSavedOffsetRef.current) {
+      return;
+    }
+
+    const offset = Number.parseInt(pageOffset, 10);
+    if (!Number.isInteger(offset)) {
+      setStatus({ kind: "error", message: "Page offset must be an integer" });
+      return;
+    }
+
+    const sequence = offsetSaveSequenceRef.current + 1;
+    offsetSaveSequenceRef.current = sequence;
+    setStatus({ kind: "loading", message: "Saving project offset" });
+
+    const timeoutId = window.setTimeout(() => {
+      void autosaveProjectOffset(project.id, offset, sequence);
+    }, 500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [pageOffset, project?.id, view.kind]);
+
   const workspaceStyle = {
     "--editor-split": `${splitPercent}%`
   } as CSSProperties;
@@ -201,15 +229,10 @@ export function App() {
   }
 
   async function openProject(projectId: string) {
-    if (dirty && !window.confirm("Discard unsaved JSON changes and open another project?")) {
-      return;
-    }
-
     setStatus({ kind: "loading", message: "Loading project" });
     clearPreviewPdf();
     try {
       await reloadProject(projectId);
-      setDirty(false);
       setPdfVersion((value) => value + 1);
       setView({ kind: "workspace", projectId });
       setStatus({ kind: "idle", message: "Project loaded" });
@@ -229,17 +252,16 @@ export function App() {
     setProject(projectData.project);
     setTocText(tocData.toc_json);
     setPageOffset(String(projectData.project.page_offset ?? 0));
-    setDirty(false);
+    lastSavedTocRef.current = tocData.toc_json;
+    lastSavedOffsetRef.current = String(projectData.project.page_offset ?? 0);
   }
 
   function returnHome() {
-    if (dirty && !window.confirm("Discard unsaved JSON changes and return home?")) {
-      return;
-    }
     setView({ kind: "home" });
     setProject(null);
     setTocText("");
-    setDirty(false);
+    lastSavedTocRef.current = "";
+    lastSavedOffsetRef.current = "0";
     clearPreviewPdf();
     void loadProjects();
   }
@@ -300,80 +322,92 @@ export function App() {
 
   function updateEditorText(nextText: string) {
     setTocText(nextText);
-    setDirty(true);
   }
 
-  async function saveTocJson() {
+  async function autosaveTocJson(projectId: string, nextTocText: string, sequence: number) {
+    try {
+      const data = await requestJson<{ project: Project; toc_json: string }>(
+        `/api/projects/${projectId}/toc`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ toc_json: nextTocText })
+        }
+      );
+      if (tocSaveSequenceRef.current !== sequence) {
+        return;
+      }
+      lastSavedTocRef.current = nextTocText;
+      setProject(data.project);
+      await loadProjects();
+      setStatus({ kind: "success", message: "TOC JSON autosaved" });
+    } catch (error) {
+      if (tocSaveSequenceRef.current !== sequence) {
+        return;
+      }
+      setStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Failed to autosave TOC JSON"
+      });
+    }
+  }
+
+  async function autosaveProjectOffset(projectId: string, offset: number, sequence: number) {
+    try {
+      const data = await requestJson<{ project: Project }>(`/api/projects/${projectId}/metadata`, {
+        method: "PUT",
+        body: JSON.stringify({ page_offset: offset })
+      });
+      if (offsetSaveSequenceRef.current !== sequence) {
+        return;
+      }
+      lastSavedOffsetRef.current = String(offset);
+      setProject(data.project);
+      await loadProjects();
+      setStatus({ kind: "success", message: "Project offset autosaved" });
+    } catch (error) {
+      if (offsetSaveSequenceRef.current !== sequence) {
+        return;
+      }
+      setStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Failed to autosave project offset"
+      });
+    }
+  }
+
+  async function flushAutosave() {
     if (!project) {
       return;
     }
 
-    setStatus({ kind: "loading", message: "Saving TOC JSON" });
-    try {
-      const data = await requestJson<{ project: Project; toc_json: string }>(
-        `/api/projects/${project.id}/toc`,
-        {
-          method: "PUT",
-          body: JSON.stringify({ toc_json: tocText })
-        }
-      );
-      setProject(data.project);
-      setDirty(false);
-      await loadProjects();
-      setStatus({ kind: "success", message: "TOC JSON saved" });
-    } catch (error) {
-      setStatus({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Failed to save TOC JSON"
-      });
-    }
-  }
-
-  async function validateToc(showSuccess = true): Promise<boolean> {
-    if (!project) {
-      return false;
-    }
-
     const offset = Number.parseInt(pageOffset, 10);
     if (!Number.isInteger(offset)) {
-      setStatus({ kind: "error", message: "Page offset must be an integer" });
-      return false;
+      throw new Error("Page offset must be an integer");
     }
 
-    try {
-      const data = await requestJson<{
-        validation: {
-          valid: boolean;
-          issues: ValidationIssue[];
-          bookmark_count: number;
-        };
-        project: Project;
-      }>(`/api/projects/${project.id}/validate`, {
-        method: "POST",
-        body: JSON.stringify({ toc_json: tocText, page_offset: offset })
-      });
-      setProject(data.project);
+    const tocSequence = tocSaveSequenceRef.current + 1;
+    const offsetSequence = offsetSaveSequenceRef.current + 1;
+    tocSaveSequenceRef.current = tocSequence;
+    offsetSaveSequenceRef.current = offsetSequence;
+    const [tocData, metadataData] = await Promise.all([
+      requestJson<{ project: Project; toc_json: string }>(`/api/projects/${project.id}/toc`, {
+        method: "PUT",
+        body: JSON.stringify({ toc_json: tocText })
+      }),
+      requestJson<{ project: Project }>(`/api/projects/${project.id}/metadata`, {
+        method: "PUT",
+        body: JSON.stringify({ page_offset: offset })
+      })
+    ]);
+
+    if (
+      tocSaveSequenceRef.current === tocSequence &&
+      offsetSaveSequenceRef.current === offsetSequence
+    ) {
+      lastSavedTocRef.current = tocText;
+      lastSavedOffsetRef.current = String(offset);
+      setProject({ ...tocData.project, page_offset: metadataData.project.page_offset });
       await loadProjects();
-      if (!data.validation.valid) {
-        setStatus({
-          kind: "error",
-          message: data.validation.issues[0]?.message ?? "Invalid TOC JSON"
-        });
-        return false;
-      }
-      if (showSuccess) {
-        setStatus({
-          kind: "success",
-          message: `Validation passed (${data.validation.bookmark_count} bookmarks)`
-        });
-      }
-      return true;
-    } catch (error) {
-      setStatus({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Validation failed"
-      });
-      return false;
     }
   }
 
@@ -381,13 +415,16 @@ export function App() {
     if (!project) {
       return;
     }
-    if (!(await validateToc(false))) {
+
+    const offset = Number.parseInt(pageOffset, 10);
+    if (!Number.isInteger(offset)) {
+      setStatus({ kind: "error", message: "Page offset must be an integer" });
       return;
     }
 
-    const offset = Number.parseInt(pageOffset, 10);
     setStatus({ kind: "loading", message: "Applying TOC to PDF" });
     try {
+      await flushAutosave();
       const response = await fetch(`/api/projects/${project.id}/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -408,20 +445,6 @@ export function App() {
       setStatus({
         kind: "error",
         message: error instanceof Error ? error.message : "Failed to apply TOC"
-      });
-    }
-  }
-
-  function formatTocJson() {
-    try {
-      const parsed = JSON.parse(tocText);
-      setTocText(JSON.stringify(parsed, null, 2));
-      setDirty(true);
-      setStatus({ kind: "success", message: "TOC JSON formatted" });
-    } catch (error) {
-      setStatus({
-        kind: "error",
-        message: error instanceof Error ? `JSON syntax error: ${error.message}` : "Invalid JSON"
       });
     }
   }
@@ -611,7 +634,6 @@ export function App() {
         project={project}
         tocText={tocText}
         pageOffset={pageOffset}
-        dirty={dirty}
         status={status}
         canUseProjectActions={canUseProjectActions}
         previewPdf={previewPdf}
@@ -625,9 +647,6 @@ export function App() {
         maxSplitPercent={MAX_SPLIT_PERCENT}
         onReturnHome={returnHome}
         onPageOffsetChange={setPageOffset}
-        onSaveToc={() => void saveTocJson()}
-        onFormatToc={formatTocJson}
-        onValidateToc={() => void validateToc()}
         onOpenGenerateDialog={() => setGenerateDialogOpen(true)}
         onApplyPreview={() => void applyPreview()}
         onOpenSettings={openSettings}

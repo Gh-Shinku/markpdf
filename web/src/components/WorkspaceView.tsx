@@ -7,26 +7,23 @@ import type {
 import {
   BookMarked,
   Download,
-  FileJson,
   FileText,
   Home,
   Loader2,
   Play,
-  Save,
   Settings,
-  ShieldCheck,
   Wand2
 } from "lucide-react";
 import { JsonEditor, type JsonEditorHandle } from "../JsonEditor";
 import type { PreviewPdf, Project, Status } from "../types";
 import { formatDate } from "../utils";
+import { PdfViewer } from "./PdfViewer";
 import { StatusLine } from "./StatusLine";
 
 type WorkspaceViewProps = {
   project: Project | null;
   tocText: string;
   pageOffset: string;
-  dirty: boolean;
   status: Status;
   canUseProjectActions: boolean;
   previewPdf: PreviewPdf | null;
@@ -40,9 +37,6 @@ type WorkspaceViewProps = {
   maxSplitPercent: number;
   onReturnHome: () => void;
   onPageOffsetChange: (value: string) => void;
-  onSaveToc: () => void;
-  onFormatToc: () => void;
-  onValidateToc: () => void;
   onOpenGenerateDialog: () => void;
   onApplyPreview: () => void;
   onOpenSettings: () => void;
@@ -58,7 +52,6 @@ export function WorkspaceView({
   project,
   tocText,
   pageOffset,
-  dirty,
   status,
   canUseProjectActions,
   previewPdf,
@@ -72,9 +65,6 @@ export function WorkspaceView({
   maxSplitPercent,
   onReturnHome,
   onPageOffsetChange,
-  onSaveToc,
-  onFormatToc,
-  onValidateToc,
   onOpenGenerateDialog,
   onApplyPreview,
   onOpenSettings,
@@ -108,37 +98,6 @@ export function WorkspaceView({
           <button className="secondary-action" type="button" onClick={onReturnHome}>
             <Home size={16} />
             Home
-          </button>
-          <label className="offset-control">
-            <span>Offset</span>
-            <input
-              type="number"
-              step="1"
-              value={pageOffset}
-              onChange={(event) => onPageOffsetChange(event.target.value)}
-            />
-          </label>
-          <button className="secondary-action" type="button" disabled={!dirty} onClick={onSaveToc}>
-            <Save size={16} />
-            Save
-          </button>
-          <button
-            className="secondary-action"
-            type="button"
-            disabled={!tocText.trim()}
-            onClick={onFormatToc}
-          >
-            <FileJson size={16} />
-            Format
-          </button>
-          <button
-            className="secondary-action"
-            type="button"
-            disabled={!canUseProjectActions}
-            onClick={onValidateToc}
-          >
-            <ShieldCheck size={16} />
-            Validate
           </button>
           <button
             className="secondary-action"
@@ -175,10 +134,7 @@ export function WorkspaceView({
           <div className="pane-header">
             <div>
               <h2>TOC JSON</h2>
-              <p>
-                {dirty ? "Unsaved changes" : "Saved"} - updated{" "}
-                {formatDate(project?.toc_updated_at ?? null)}
-              </p>
+              <p>Autosaved - updated {formatDate(project?.toc_updated_at ?? null)}</p>
             </div>
           </div>
 
@@ -207,12 +163,23 @@ export function WorkspaceView({
               <h2>{previewPdf ? "Bookmarked Preview" : "Source PDF"}</h2>
               <p>{project ? project.pdf_filename : "No PDF selected"}</p>
             </div>
-            <StatusLine status={status} />
+            <div className="preview-statusbar">
+              <label className="offset-control">
+                <span>Offset</span>
+                <input
+                  type="number"
+                  step="1"
+                  value={pageOffset}
+                  onChange={(event) => onPageOffsetChange(event.target.value)}
+                />
+              </label>
+              <StatusLine status={status} />
+            </div>
           </div>
 
           <div className="pdf-frame">
             {project ? (
-              <iframe title="PDF preview" src={pdfFrameSrc} />
+              <PdfViewer source={pdfFrameSrc} />
             ) : (
               <div className="empty-preview">
                 <FileText size={34} />

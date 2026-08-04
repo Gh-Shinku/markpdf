@@ -93,6 +93,33 @@ def test_project_validate_and_apply(tmp_path) -> None:
         assert doc.get_toc() == [[1, "Contents", 1], [1, "Chapter 1", 2]]
 
 
+def test_project_metadata_persists_page_offset(tmp_path) -> None:
+    project = _create_project(tmp_path, page_count=4)
+
+    response = client.put(
+        f"/api/projects/{project['id']}/metadata",
+        json={"page_offset": 28},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["project"]["page_offset"] == 28
+    project_response = client.get(f"/api/projects/{project['id']}")
+    assert project_response.json()["project"]["page_offset"] == 28
+
+
+def test_project_apply_returns_validation_error(tmp_path) -> None:
+    project = _create_project(tmp_path, page_count=2)
+    toc_text = json.dumps([{"title": "Chapter 1", "page": 9, "children": []}])
+
+    response = client.post(
+        f"/api/projects/{project['id']}/apply",
+        json={"toc_json": toc_text, "page_offset": 0},
+    )
+
+    assert response.status_code == 400
+    assert "out of range" in response.json()["detail"]
+
+
 def test_project_validate_rejects_out_of_range_page(tmp_path) -> None:
     project = _create_project(tmp_path, page_count=2)
     toc_text = json.dumps([{"title": "Chapter 1", "page": 9, "children": []}])
