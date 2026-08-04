@@ -21,3 +21,5 @@ backup/
 web/node_modules/
 web/dist/
 web/*.tsbuildinfo
+
+workspace_data

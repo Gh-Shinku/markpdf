@@ -1,10 +1,17 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
+import "monaco-editor/esm/vs/base/browser/ui/codicons/codiconStyles";
+import "monaco-editor/esm/vs/editor/contrib/find/browser/findController";
+import "monaco-editor/esm/vs/editor/contrib/folding/browser/folding";
 import "monaco-editor/esm/vs/language/json/monaco.contribution";
 
 type JsonEditorProps = {
   value: string;
   onChange: (value: string) => void;
+};
+
+export type JsonEditorHandle = {
+  openFind: () => void;
 };
 
 const TOC_SCHEMA_URI = "inmemory://bookmark/toc.schema.json";
@@ -80,7 +87,10 @@ function createModel(value: string): monaco.editor.ITextModel {
   return monaco.editor.createModel(value, "json", uri);
 }
 
-export function JsonEditor({ value, onChange }: JsonEditorProps) {
+export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function JsonEditor(
+  { value, onChange },
+  ref,
+) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
@@ -90,6 +100,13 @@ export function JsonEditor({ value, onChange }: JsonEditorProps) {
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  useImperativeHandle(ref, () => ({
+    openFind() {
+      editorRef.current?.focus();
+      editorRef.current?.getAction("actions.find")?.run();
+    }
+  }));
 
   useEffect(() => {
     if (!hostRef.current) {
@@ -113,6 +130,9 @@ export function JsonEditor({ value, onChange }: JsonEditorProps) {
       formatOnType: true,
       scrollBeyondLastLine: false,
       folding: true,
+      foldingHighlight: true,
+      foldingStrategy: "auto",
+      showFoldingControls: "always",
       lineNumbers: "on",
       renderLineHighlight: "all",
       bracketPairColorization: { enabled: true },
@@ -130,6 +150,10 @@ export function JsonEditor({ value, onChange }: JsonEditorProps) {
       }
     });
     editorRef.current = editor;
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF, () => {
+      editor.getAction("actions.find")?.run();
+    });
 
     const subscription = editor.onDidChangeModelContent(() => {
       if (suppressChangeRef.current) {
@@ -160,4 +184,4 @@ export function JsonEditor({ value, onChange }: JsonEditorProps) {
   }, [value]);
 
   return <div className="json-editor-shell" ref={hostRef} />;
-}
+});
