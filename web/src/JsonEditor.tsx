@@ -1,110 +1,91 @@
 import { useEffect, useRef } from "react";
-import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { json, jsonParseLinter } from "@codemirror/lang-json";
-import {
-  bracketMatching,
-  defaultHighlightStyle,
-  foldGutter,
-  indentOnInput,
-  syntaxHighlighting
-} from "@codemirror/language";
-import { linter, lintGutter } from "@codemirror/lint";
-import { searchKeymap } from "@codemirror/search";
-import { EditorState, Extension } from "@codemirror/state";
-import {
-  drawSelection,
-  dropCursor,
-  EditorView,
-  highlightActiveLine,
-  highlightActiveLineGutter,
-  highlightSpecialChars,
-  keymap,
-  lineNumbers
-} from "@codemirror/view";
+import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
+import "monaco-editor/esm/vs/language/json/monaco.contribution";
 
 type JsonEditorProps = {
   value: string;
   onChange: (value: string) => void;
 };
 
-function makeExtensions(onChange: (value: string) => void): Extension[] {
-  return [
-    lineNumbers(),
-    foldGutter(),
-    lintGutter(),
-    highlightSpecialChars(),
-    history(),
-    drawSelection(),
-    dropCursor(),
-    indentOnInput(),
-    bracketMatching(),
-    closeBrackets(),
-    autocompletion(),
-    highlightActiveLine(),
-    highlightActiveLineGutter(),
-    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-    json(),
-    linter(jsonParseLinter()),
-    EditorView.lineWrapping,
-    keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
-    EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
-        onChange(update.state.doc.toString());
+const TOC_SCHEMA_URI = "inmemory://bookmark/toc.schema.json";
+const MODEL_URI = "inmemory://bookmark/toc.json";
+
+type JsonLanguageDefaults = {
+  setDiagnosticsOptions: (options: {
+    validate: boolean;
+    allowComments: boolean;
+    trailingCommas: "ignore" | "warning" | "error";
+    schemas: unknown[];
+  }) => void;
+};
+
+(monaco.languages.json as unknown as { jsonDefaults: JsonLanguageDefaults }).jsonDefaults.setDiagnosticsOptions({
+  validate: true,
+  allowComments: false,
+  trailingCommas: "error",
+  schemas: [
+    {
+      uri: TOC_SCHEMA_URI,
+      fileMatch: [MODEL_URI],
+      schema: {
+        $schema: "http://json-schema.org/draft-07/schema#",
+        title: "TOC JSON",
+        type: "array",
+        items: { $ref: "#/definitions/tocNode" },
+        definitions: {
+          tocNode: {
+            type: "object",
+            additionalProperties: false,
+            required: ["title", "page", "children"],
+            properties: {
+              title: {
+                type: "string",
+                minLength: 1
+              },
+              page: {
+                anyOf: [
+                  {
+                    type: "integer",
+                    minimum: 1
+                  },
+                  {
+                    type: "null"
+                  }
+                ]
+              },
+              attribute: {
+                type: "string",
+                enum: ["relative", "absolute"],
+                default: "relative"
+              },
+              children: {
+                type: "array",
+                items: { $ref: "#/definitions/tocNode" }
+              }
+            }
+          }
+        }
       }
-    }),
-    EditorView.theme({
-      "&": {
-        height: "100%",
-        color: "#1f2a35",
-        backgroundColor: "#fbfcfe",
-        fontSize: "13px"
-      },
-      ".cm-scroller": {
-        fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
-        lineHeight: "1.55"
-      },
-      ".cm-content": {
-        padding: "14px 0",
-        caretColor: "#2266a5"
-      },
-      ".cm-line": {
-        padding: "0 16px 0 8px"
-      },
-      ".cm-gutters": {
-        backgroundColor: "#f3f6f9",
-        color: "#697685",
-        borderRight: "1px solid #dbe3eb"
-      },
-      ".cm-activeLine": {
-        backgroundColor: "#edf6ff"
-      },
-      ".cm-activeLineGutter": {
-        backgroundColor: "#e3f0fc",
-        color: "#174d7e"
-      },
-      ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-        backgroundColor: "#b7d7f2"
-      },
-      "&.cm-focused": {
-        outline: "none"
-      },
-      ".cm-tooltip": {
-        border: "1px solid #c6d2df",
-        borderRadius: "6px"
-      },
-      ".cm-diagnostic": {
-        fontFamily:
-          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-      }
-    })
-  ];
+    }
+  ]
+});
+
+function createModel(value: string): monaco.editor.ITextModel {
+  const uri = monaco.Uri.parse(MODEL_URI);
+  const existingModel = monaco.editor.getModel(uri);
+  if (existingModel) {
+    existingModel.setValue(value);
+    return existingModel;
+  }
+  return monaco.editor.createModel(value, "json", uri);
 }
 
 export function JsonEditor({ value, onChange }: JsonEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const viewRef = useRef<EditorView | null>(null);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const modelRef = useRef<monaco.editor.ITextModel | null>(null);
   const onChangeRef = useRef(onChange);
+  const suppressChangeRef = useRef(false);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -115,39 +96,67 @@ export function JsonEditor({ value, onChange }: JsonEditorProps) {
       return;
     }
 
-    const view = new EditorView({
-      parent: hostRef.current,
-      state: EditorState.create({
-        doc: value,
-        extensions: makeExtensions((nextValue) => onChangeRef.current(nextValue))
-      })
+    const model = createModel(value);
+    modelRef.current = model;
+
+    const editor = monaco.editor.create(hostRef.current, {
+      model,
+      language: "json",
+      theme: "vs",
+      automaticLayout: true,
+      minimap: { enabled: false },
+      wordWrap: "on",
+      tabSize: 2,
+      insertSpaces: true,
+      detectIndentation: false,
+      formatOnPaste: true,
+      formatOnType: true,
+      scrollBeyondLastLine: false,
+      folding: true,
+      lineNumbers: "on",
+      renderLineHighlight: "all",
+      bracketPairColorization: { enabled: true },
+      guides: {
+        bracketPairs: true,
+        indentation: true
+      },
+      padding: {
+        top: 12,
+        bottom: 12
+      },
+      scrollbar: {
+        verticalScrollbarSize: 12,
+        horizontalScrollbarSize: 12
+      }
     });
-    viewRef.current = view;
+    editorRef.current = editor;
+
+    const subscription = editor.onDidChangeModelContent(() => {
+      if (suppressChangeRef.current) {
+        return;
+      }
+      onChangeRef.current(editor.getValue());
+    });
 
     return () => {
-      view.destroy();
-      viewRef.current = null;
+      subscription.dispose();
+      editor.dispose();
+      editorRef.current = null;
+      modelRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    const view = viewRef.current;
-    if (!view) {
+    const editor = editorRef.current;
+    const model = modelRef.current;
+    if (!editor || !model || value === model.getValue()) {
       return;
     }
 
-    const currentValue = view.state.doc.toString();
-    if (value === currentValue) {
-      return;
-    }
-
-    view.dispatch({
-      changes: {
-        from: 0,
-        to: currentValue.length,
-        insert: value
-      }
-    });
+    suppressChangeRef.current = true;
+    model.setValue(value);
+    suppressChangeRef.current = false;
+    editor.setScrollTop(0);
   }, [value]);
 
   return <div className="json-editor-shell" ref={hostRef} />;

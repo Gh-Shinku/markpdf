@@ -210,6 +210,19 @@ export function App() {
     }
   }
 
+  function formatTocJson() {
+    try {
+      const parsed = JSON.parse(tocText);
+      setTocText(JSON.stringify(parsed, null, 2));
+      setStatus({ kind: "success", message: "TOC JSON formatted" });
+    } catch (error) {
+      setStatus({
+        kind: "error",
+        message: error instanceof Error ? `JSON syntax error: ${error.message}` : "Invalid JSON"
+      });
+    }
+  }
+
   const statusIcon =
     status.kind === "loading" ? (
       <Loader2 className="spin" size={17} />
@@ -255,6 +268,15 @@ export function App() {
           <button className="primary-action" type="button" disabled={!canPreview} onClick={preview}>
             {status.kind === "loading" ? <Loader2 className="spin" size={17} /> : <Play size={17} />}
             Preview
+          </button>
+          <button
+            className="secondary-action"
+            type="button"
+            disabled={!tocText.trim() || status.kind === "loading"}
+            onClick={formatTocJson}
+          >
+            <FileJson size={17} />
+            Format
           </button>
           {previewPdf?.kind === "generated" ? (
             <a className="download-action" href={previewPdf.url} download={previewPdf.filename}>

@@ -89,6 +89,7 @@ h2 {
 .upload-control,
 .offset-control,
 .primary-action,
+.secondary-action,
 .download-action {
   display: inline-flex;
   align-items: center;
@@ -135,6 +136,7 @@ h2 {
 }
 
 .primary-action,
+.secondary-action,
 .download-action {
   padding: 8px 12px;
 }
@@ -150,6 +152,18 @@ h2 {
   cursor: not-allowed;
   border-color: #91a7bb;
   background: #91a7bb;
+}
+
+.secondary-action {
+  color: #26313b;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.secondary-action:disabled {
+  cursor: not-allowed;
+  color: #748393;
+  background: #f2f5f8;
 }
 
 .download-action {
@@ -219,17 +233,8 @@ h2 {
   overflow: hidden;
 }
 
-.json-editor-shell .cm-editor,
-.json-editor-shell .cm-scroller {
-  min-height: 0;
-}
-
-.json-editor-shell .cm-editor {
+.json-editor-shell .monaco-editor {
   height: 100%;
-}
-
-.json-editor-shell .cm-scroller {
-  overflow: auto;
 }
 
 .schema-footer {
@@ -346,6 +351,7 @@ h2 {
 
   .offset-control,
   .primary-action,
+  .secondary-action,
   .download-action {
     width: 100%;
   }
