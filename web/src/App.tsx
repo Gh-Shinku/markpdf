@@ -10,6 +10,7 @@ import {
   Play,
   Upload
 } from "lucide-react";
+import { JsonEditor } from "./JsonEditor";
 
 type Status =
   | { kind: "idle"; message: string }
@@ -277,13 +278,7 @@ export function App() {
             </div>
           </div>
 
-          <textarea
-            className="json-editor"
-            spellCheck={false}
-            value={tocText}
-            onChange={(event) => setTocText(event.target.value)}
-            aria-label="TOC JSON editor"
-          />
+          <JsonEditor value={tocText} onChange={setTocText} />
 
           <div className="schema-footer">
             <span>relative PDF page = page + offset</span>

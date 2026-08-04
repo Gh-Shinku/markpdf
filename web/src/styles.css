@@ -19,8 +19,7 @@ body {
 }
 
 button,
-input,
-textarea {
+input {
   font: inherit;
 }
 
@@ -212,20 +211,25 @@ h2 {
   white-space: nowrap;
 }
 
-.json-editor {
+.json-editor-shell {
   width: 100%;
   min-width: 0;
   min-height: 0;
-  resize: none;
-  padding: 14px 16px;
-  border: 0;
-  outline: none;
-  color: #1f2a35;
   background: #fbfcfe;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 13px;
-  line-height: 1.55;
-  tab-size: 2;
+  overflow: hidden;
+}
+
+.json-editor-shell .cm-editor,
+.json-editor-shell .cm-scroller {
+  min-height: 0;
+}
+
+.json-editor-shell .cm-editor {
+  height: 100%;
+}
+
+.json-editor-shell .cm-scroller {
+  overflow: auto;
 }
 
 .schema-footer {
