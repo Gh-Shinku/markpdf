@@ -23,10 +23,19 @@ The CLI now provides two subcommands:
 
 ## Web Workspace
 
-The repository also contains an apply-only web workspace:
+The repository also contains a local web workspace for managing multiple PDF bookmark projects:
 
-- `server/`: FastAPI backend that accepts uploaded PDF and TOC JSON files.
-- `web/`: React + Vite frontend with a TOC JSON editor and PDF preview pane.
+- `server/`: FastAPI backend that stores local projects and applies or generates TOC JSON.
+- `web/`: React + Vite frontend with a Home Manager, Monaco TOC JSON editor, and PDF preview pane.
+
+Project data is stored locally under `workspace_data/` by default. This includes uploaded PDFs,
+TOC JSON files, generated outputs, cache files, and LLM settings. Override the location when
+starting the backend if you want the data outside the repository:
+
+```bash
+BOOKMARK_WORKSPACE_DATA=/path/to/bookmark-data \
+	uv run uvicorn server.bookmark_server.main:app --reload --host 127.0.0.1 --port 8000
+```
 
 Run the backend:
 
@@ -42,10 +51,22 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173/`. The Vite dev server proxies `/api/*` to the FastAPI backend.
+Open `http://127.0.0.1:5173/`. The Vite dev server proxies `/api/*` to the FastAPI backend.
+Both development servers are configured for localhost use.
 
-In the web workspace, upload a source PDF, upload or edit TOC JSON in the editor,
-then use `Preview` to render the generated bookmarked PDF in the preview pane.
+In the Home Manager, create a project from a PDF and optionally attach an initial TOC JSON file.
+Click a project to open the workspace. The right pane renders the source PDF inline; after
+`Preview`, it renders the generated bookmarked PDF and exposes a `Download` link.
+
+Workspace actions:
+
+- `Save`: Persist the current editor content to the project's `toc.json`.
+- `Validate`: Parse and validate TOC JSON against the source PDF and page offset.
+- `Preview`: Validate, apply bookmarks, and render the generated PDF.
+- `AI Generate`: Use the configured OpenAI-compatible VLM settings to generate TOC JSON from a
+  TOC page range. This overwrites the saved project JSON after a confirmation dialog.
+- `Settings`: Configure `base_url`, `model`, and API key for generation. The API key is stored in
+  the local server settings file in plain text, so use this only in a trusted local workspace.
 
 ### Extract TOC JSON
 
@@ -59,8 +80,8 @@ Options:
 
 - `INPUT_PDF`: Path to the source PDF.
 - `OUTPUT_JSON`: Optional path to save extracted TOC JSON. If omitted, extraction result is stored in cache only.
-- `--toc-start`: The first TOC page in the PDF (0-based, inclusive).
-- `--toc-end`: The last TOC page in the PDF (0-based, inclusive).
+- `--toc-start`: The first TOC page in the PDF (1-based, inclusive).
+- `--toc-end`: The last TOC page in the PDF (1-based, inclusive).
 - `--api-key`: Optional. VLM API Key (defaults to `DASHSCOPE_API_KEY`).
 - `--base-url`: Optional. API endpoint (defaults to DashScope).
 - `--model`: Optional. VLM model name.
@@ -140,6 +161,9 @@ Implementation notes:
 ```bash
 export DASHSCOPE_API_KEY="your_key"
 ```
+
+The CLI reads `DASHSCOPE_API_KEY` when `--api-key` is omitted. The web workspace reads generation
+settings from its local Settings page instead.
 
 ## VLM Response Format
 

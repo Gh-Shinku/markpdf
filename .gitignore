@@ -16,10 +16,9 @@ backup/
 
 # runtime
 .runtime/
+workspace_data/
 
 # web
 web/node_modules/
 web/dist/
 web/*.tsbuildinfo
-
-workspace_data

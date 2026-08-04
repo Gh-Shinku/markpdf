@@ -8,81 +8,22 @@ import {
   useRef,
   useState
 } from "react";
-import {
-  AlertCircle,
-  ArrowLeft,
-  BookMarked,
-  CheckCircle2,
-  Download,
-  FileJson,
-  FileText,
-  FolderOpen,
-  Home,
-  Loader2,
-  Play,
-  Save,
-  Settings,
-  ShieldCheck,
-  Trash2,
-  Upload,
-  Wand2,
-  X
-} from "lucide-react";
-import { JsonEditor, JsonEditorHandle } from "./JsonEditor";
-
-type Status =
-  | { kind: "idle"; message: string }
-  | { kind: "loading"; message: string }
-  | { kind: "success"; message: string }
-  | { kind: "error"; message: string };
-
-type View =
-  | { kind: "home" }
-  | { kind: "workspace"; projectId: string }
-  | { kind: "settings"; returnProjectId?: string };
-
-type ValidationIssue = {
-  message: string;
-};
-
-type ValidationSnapshot = {
-  valid: boolean;
-  bookmark_count: number;
-  checked_at: string;
-  issues: ValidationIssue[];
-};
-
-type Project = {
-  id: string;
-  name: string;
-  pdf_filename: string;
-  toc_filename: string | null;
-  page_offset: number;
-  page_count: number;
-  created_at: string;
-  updated_at: string;
-  toc_updated_at: string;
-  generated_at: string | null;
-  last_validation: ValidationSnapshot | null;
-};
-
-type SettingsState = {
-  base_url: string;
-  model: string;
-  has_api_key: boolean;
-  api_key_hint: string;
-};
-
-type SettingsDraft = {
-  baseUrl: string;
-  model: string;
-  apiKey: string;
-};
-
-type PreviewPdf = {
-  url: string;
-  filename: string;
-};
+import { parseError, requestJson } from "./api";
+import { GenerateDialog } from "./components/GenerateDialog";
+import { HomeView } from "./components/HomeView";
+import { SettingsView } from "./components/SettingsView";
+import { WorkspaceView } from "./components/WorkspaceView";
+import type { JsonEditorHandle } from "./JsonEditor";
+import type {
+  PreviewPdf,
+  Project,
+  SettingsDraft,
+  SettingsState,
+  Status,
+  ValidationIssue,
+  View
+} from "./types";
+import { makeBookmarkedFilename } from "./utils";
 
 const DEFAULT_SPLIT_PERCENT = 48;
 const MIN_SPLIT_PERCENT = 30;
@@ -90,45 +31,6 @@ const MAX_SPLIT_PERCENT = 70;
 
 function clampSplitPercent(value: number): number {
   return Math.min(MAX_SPLIT_PERCENT, Math.max(MIN_SPLIT_PERCENT, value));
-}
-
-async function parseError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { detail?: unknown };
-    if (typeof body.detail === "string") {
-      return body.detail;
-    }
-    return JSON.stringify(body.detail ?? body);
-  } catch {
-    return `Request failed with HTTP ${response.status}`;
-  }
-}
-
-async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    ...init
-  });
-  if (!response.ok) {
-    throw new Error(await parseError(response));
-  }
-  return (await response.json()) as T;
-}
-
-function formatDate(value: string | null): string {
-  if (!value) {
-    return "Never";
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(new Date(value));
-}
-
-function makeBookmarkedFilename(project: Project): string {
-  return `${project.pdf_filename.replace(/\.pdf$/i, "")}_bookmarked.pdf`;
 }
 
 export function App() {
@@ -616,379 +518,78 @@ export function App() {
     }
   }
 
-  const statusIcon =
-    status.kind === "loading" ? (
-      <Loader2 className="spin" size={16} />
-    ) : status.kind === "success" ? (
-      <CheckCircle2 size={16} />
-    ) : status.kind === "error" ? (
-      <AlertCircle size={16} />
-    ) : (
-      <BookMarked size={16} />
-    );
-
   if (view.kind === "settings") {
     return (
-      <main className="app-shell settings-shell">
-        <header className="topbar">
-          <div className="brand">
-            <Settings size={22} aria-hidden="true" />
-            <div>
-              <h1>LLM Settings</h1>
-              <p>OpenAI-compatible API configuration for local generation.</p>
-            </div>
-          </div>
-          <div className="toolbar">
-            <button className="secondary-action" type="button" onClick={leaveSettings}>
-              <ArrowLeft size={16} />
-              Back
-            </button>
-            <button className="primary-action" type="button" onClick={saveSettings}>
-              <Save size={16} />
-              Save
-            </button>
-          </div>
-        </header>
-
-        <section className="settings-panel">
-          <div className="settings-form">
-            <label>
-              <span>Base URL</span>
-              <input
-                value={settingsDraft.baseUrl}
-                onChange={(event) =>
-                  setSettingsDraft((draft) => ({ ...draft, baseUrl: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              <span>Model</span>
-              <input
-                value={settingsDraft.model}
-                onChange={(event) =>
-                  setSettingsDraft((draft) => ({ ...draft, model: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              <span>API key</span>
-              <input
-                type="password"
-                placeholder={
-                  settings?.has_api_key
-                    ? `Configured (${settings.api_key_hint})`
-                    : "Paste an API key"
-                }
-                value={settingsDraft.apiKey}
-                onChange={(event) =>
-                  setSettingsDraft((draft) => ({ ...draft, apiKey: event.target.value }))
-                }
-              />
-            </label>
-            <p className="settings-note">
-              The key is stored in a local server config file in plain text. Use this only for a
-              trusted local workspace.
-            </p>
-          </div>
-          <StatusLine status={status} icon={statusIcon} />
-        </section>
-      </main>
+      <SettingsView
+        settings={settings}
+        settingsDraft={settingsDraft}
+        status={status}
+        onSettingsDraftChange={setSettingsDraft}
+        onBack={leaveSettings}
+        onSave={saveSettings}
+      />
     );
   }
 
   if (view.kind === "home") {
     return (
-      <main className="app-shell home-shell">
-        <header className="topbar">
-          <div className="brand">
-            <BookMarked size={22} aria-hidden="true" />
-            <div>
-              <h1>PDF Bookmark Manager</h1>
-              <p>Local projects for PDF and TOC JSON workspaces.</p>
-            </div>
-          </div>
-
-          <div className="toolbar">
-            <label className="upload-control">
-              <FileJson size={16} />
-              <span>{pendingTocFile ? pendingTocFile.name : "Optional JSON"}</span>
-              <input
-                type="file"
-                accept="application/json,.json"
-                onChange={(event) => setPendingTocFile(event.target.files?.[0] ?? null)}
-              />
-            </label>
-            {pendingTocFile ? (
-              <button className="secondary-action icon-only" type="button" onClick={() => setPendingTocFile(null)}>
-                <X size={16} />
-              </button>
-            ) : null}
-            <label className="primary-action upload-control">
-              <Upload size={16} />
-              <span>New Project</span>
-              <input type="file" accept="application/pdf,.pdf" onChange={createProject} />
-            </label>
-            <button className="secondary-action" type="button" onClick={openSettings}>
-              <Settings size={16} />
-              Settings
-            </button>
-          </div>
-        </header>
-
-        <section className="manager">
-          <div className="manager-header">
-            <div>
-              <h2>Projects</h2>
-              <p>{projects.length} local project{projects.length === 1 ? "" : "s"}</p>
-            </div>
-            <StatusLine status={status} icon={statusIcon} />
-          </div>
-
-          {projects.length ? (
-            <div className="project-table" role="table">
-              <div className="project-row project-row-head" role="row">
-                <span>Name</span>
-                <span>Pages</span>
-                <span>TOC</span>
-                <span>Validation</span>
-                <span />
-              </div>
-              {projects.map((item) => (
-                <button
-                  className="project-row"
-                  key={item.id}
-                  type="button"
-                  onClick={() => void openProject(item.id)}
-                >
-                  <span className="project-name">
-                    <FolderOpen size={16} />
-                    <span>
-                      <strong>{item.name}</strong>
-                      <small>{item.pdf_filename}</small>
-                    </span>
-                  </span>
-                  <span>{item.page_count}</span>
-                  <span>{item.generated_at ? "Generated" : "Manual"}</span>
-                  <span className={item.last_validation?.valid ? "ok-text" : "muted-text"}>
-                    {item.last_validation
-                      ? item.last_validation.valid
-                        ? `${item.last_validation.bookmark_count} bookmarks`
-                        : "Needs fix"
-                      : "Unchecked"}
-                  </span>
-                  <span className="row-actions">
-                    <Trash2
-                      size={16}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void deleteProject(item.id);
-                      }}
-                    />
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-manager">
-              <FileText size={34} />
-              <span>Upload a PDF to create the first project.</span>
-            </div>
-          )}
-        </section>
-      </main>
+      <HomeView
+        projects={projects}
+        pendingTocFile={pendingTocFile}
+        status={status}
+        onPendingTocFileChange={setPendingTocFile}
+        onCreateProject={(event) => void createProject(event)}
+        onOpenProject={(projectId) => void openProject(projectId)}
+        onDeleteProject={(projectId) => void deleteProject(projectId)}
+        onOpenSettings={openSettings}
+      />
     );
   }
 
-  const pdfFrameSrc = project
-    ? previewPdf?.url ?? `/api/projects/${project.id}/pdf?v=${pdfVersion}`
-    : "";
-
   return (
-    <main className={`app-shell${isResizing ? " resizing" : ""}`}>
-      <header className="topbar">
-        <div className="brand">
-          <BookMarked size={22} aria-hidden="true" />
-          <div>
-            <h1>{project?.name ?? "PDF Bookmark Workspace"}</h1>
-            <p>
-              {project
-                ? `${project.pdf_filename} - ${project.page_count} pages`
-                : "Editor and preview for TOC JSON."}
-            </p>
-          </div>
-        </div>
-
-        <div className="toolbar">
-          <button className="secondary-action" type="button" onClick={returnHome}>
-            <Home size={16} />
-            Home
-          </button>
-          <label className="offset-control">
-            <span>Offset</span>
-            <input
-              type="number"
-              step="1"
-              value={pageOffset}
-              onChange={(event) => setPageOffset(event.target.value)}
-            />
-          </label>
-          <button className="secondary-action" type="button" disabled={!dirty} onClick={saveTocJson}>
-            <Save size={16} />
-            Save
-          </button>
-          <button
-            className="secondary-action"
-            type="button"
-            disabled={!tocText.trim()}
-            onClick={formatTocJson}
-          >
-            <FileJson size={16} />
-            Format
-          </button>
-          <button
-            className="secondary-action"
-            type="button"
-            disabled={!canUseProjectActions}
-            onClick={() => void validateToc()}
-          >
-            <ShieldCheck size={16} />
-            Validate
-          </button>
-          <button
-            className="secondary-action"
-            type="button"
-            disabled={!project || status.kind === "loading"}
-            onClick={() => setGenerateDialogOpen(true)}
-          >
-            <Wand2 size={16} />
-            AI Generate
-          </button>
-          <button
-            className="primary-action"
-            type="button"
-            disabled={!canUseProjectActions}
-            onClick={applyPreview}
-          >
-            {status.kind === "loading" ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
-            Preview
-          </button>
-          {previewPdf ? (
-            <a className="download-action" href={previewPdf.url} download={previewPdf.filename}>
-              <Download size={16} />
-              Download
-            </a>
-          ) : null}
-          <button className="secondary-action icon-only" type="button" onClick={openSettings}>
-            <Settings size={16} />
-          </button>
-        </div>
-      </header>
-
-      <section className="workspace-grid" ref={workspaceRef} style={workspaceStyle}>
-        <section className="editor-pane">
-          <div className="pane-header">
-            <div>
-              <h2>TOC JSON</h2>
-              <p>
-                {dirty ? "Unsaved changes" : "Saved"} - updated {formatDate(project?.toc_updated_at ?? null)}
-              </p>
-            </div>
-          </div>
-
-          <JsonEditor ref={editorRef} value={tocText} onChange={updateEditorText} />
-        </section>
-
-        <div
-          className="splitter"
-          role="separator"
-          aria-label="Resize editor and preview panes"
-          aria-orientation="vertical"
-          aria-valuemin={MIN_SPLIT_PERCENT}
-          aria-valuemax={MAX_SPLIT_PERCENT}
-          aria-valuenow={Math.round(splitPercent)}
-          tabIndex={0}
-          onKeyDown={resizeSplitterWithKeyboard}
-          onPointerDown={startSplitterDrag}
-          onPointerMove={dragSplitter}
-          onPointerUp={stopSplitterDrag}
-          onPointerCancel={stopSplitterDrag}
-        />
-
-        <section className="preview-pane">
-          <div className="pane-header">
-            <div>
-              <h2>{previewPdf ? "Bookmarked Preview" : "Source PDF"}</h2>
-              <p>{project ? project.pdf_filename : "No PDF selected"}</p>
-            </div>
-            <StatusLine status={status} icon={statusIcon} />
-          </div>
-
-          <div className="pdf-frame">
-            {project ? (
-              <iframe title="PDF preview" src={pdfFrameSrc} />
-            ) : (
-              <div className="empty-preview">
-                <FileText size={34} />
-                <span>Select a project to render it here.</span>
-              </div>
-            )}
-          </div>
-        </section>
-      </section>
-
+    <>
+      <WorkspaceView
+        project={project}
+        tocText={tocText}
+        pageOffset={pageOffset}
+        dirty={dirty}
+        status={status}
+        canUseProjectActions={canUseProjectActions}
+        previewPdf={previewPdf}
+        pdfVersion={pdfVersion}
+        isResizing={isResizing}
+        workspaceStyle={workspaceStyle}
+        workspaceRef={workspaceRef}
+        editorRef={editorRef}
+        splitPercent={splitPercent}
+        minSplitPercent={MIN_SPLIT_PERCENT}
+        maxSplitPercent={MAX_SPLIT_PERCENT}
+        onReturnHome={returnHome}
+        onPageOffsetChange={setPageOffset}
+        onSaveToc={() => void saveTocJson()}
+        onFormatToc={formatTocJson}
+        onValidateToc={() => void validateToc()}
+        onOpenGenerateDialog={() => setGenerateDialogOpen(true)}
+        onApplyPreview={() => void applyPreview()}
+        onOpenSettings={openSettings}
+        onEditorChange={updateEditorText}
+        onSplitterKeyDown={resizeSplitterWithKeyboard}
+        onSplitterPointerDown={startSplitterDrag}
+        onSplitterPointerMove={dragSplitter}
+        onSplitterPointerUp={stopSplitterDrag}
+        onSplitterPointerCancel={stopSplitterDrag}
+      />
       {generateDialogOpen && project ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="generate-title">
-            <div className="modal-header">
-              <h2 id="generate-title">Generate TOC JSON</h2>
-              <button
-                className="secondary-action icon-only"
-                type="button"
-                onClick={() => setGenerateDialogOpen(false)}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <p className="warning-text">
-              The generated result will overwrite the saved JSON for this project.
-            </p>
-            <div className="range-grid">
-              <label>
-                <span>TOC start page</span>
-                <input value={tocStart} type="number" min="1" onChange={(event) => setTocStart(event.target.value)} />
-              </label>
-              <label>
-                <span>TOC end page</span>
-                <input
-                  value={tocEnd}
-                  type="number"
-                  min="1"
-                  max={project.page_count}
-                  onChange={(event) => setTocEnd(event.target.value)}
-                />
-              </label>
-            </div>
-            <div className="modal-actions">
-              <button className="secondary-action" type="button" onClick={() => setGenerateDialogOpen(false)}>
-                Cancel
-              </button>
-              <button className="primary-action" type="button" onClick={generateToc}>
-                <Wand2 size={16} />
-                Generate and Replace
-              </button>
-            </div>
-          </section>
-        </div>
+        <GenerateDialog
+          project={project}
+          tocStart={tocStart}
+          tocEnd={tocEnd}
+          onTocStartChange={setTocStart}
+          onTocEndChange={setTocEnd}
+          onCancel={() => setGenerateDialogOpen(false)}
+          onGenerate={() => void generateToc()}
+        />
       ) : null}
-    </main>
-  );
-}
-
-function StatusLine({ status, icon }: { status: Status; icon: React.ReactNode }) {
-  return (
-    <div className={`status-pill ${status.kind}`}>
-      {icon}
-      <span>{status.message}</span>
-    </div>
+    </>
   );
 }
