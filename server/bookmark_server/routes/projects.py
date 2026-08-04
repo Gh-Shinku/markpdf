@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from bookmark.core import apply_toc_to_pdf
 from bookmark.extractor import extract_toc_json
 
+from ..services.generation_jobs import generation_job_store
 from ..services.projects import store
 
 
@@ -51,6 +52,44 @@ def _project_or_404(project_id: str) -> dict[str, Any]:
 def _safe_output_name(pdf_filename: str | None) -> str:
     stem = (pdf_filename or "bookmarked").rsplit(".", 1)[0] or "bookmarked"
     return f"{stem}_bookmarked.pdf"
+
+
+def _run_generate_toc_job(
+    job_id: str,
+    project_id: str,
+    payload: GeneratePayload,
+    settings: dict[str, Any],
+) -> None:
+    generation_job_store.mark_running(job_id, "Rendering TOC pages and calling VLM")
+    try:
+        toc_data, _, _, _, stats = extract_toc_json(
+            input_pdf=store.pdf_path(project_id),
+            toc_start=payload.toc_start - 1,
+            toc_end=payload.toc_end - 1,
+            api_key=str(settings.get("api_key") or ""),
+            base_url=str(settings.get("base_url") or ""),
+            model=str(settings.get("model") or ""),
+            dpi=220,
+            cache_dir=store.cache_dir(),
+            overwrite_cache=False,
+            mode="flat",
+        )
+        toc_text = json.dumps(toc_data, ensure_ascii=False, indent=2)
+        metadata = store.save_toc_text(project_id, toc_text, generated=True)
+        generation_job_store.mark_succeeded(
+            job_id,
+            "Generated TOC replaced the project JSON",
+            {
+                "project": metadata,
+                "stats": stats,
+            },
+        )
+    except Exception as exc:
+        generation_job_store.mark_failed(
+            job_id,
+            "TOC generation failed",
+            str(exc),
+        )
 
 
 @router.get("/projects")
@@ -161,7 +200,11 @@ def apply_project_toc(project_id: str, payload: ApplyPayload) -> FileResponse:
 
 
 @router.post("/projects/{project_id}/generate-toc")
-def generate_project_toc(project_id: str, payload: GeneratePayload) -> dict[str, Any]:
+def generate_project_toc(
+    project_id: str,
+    payload: GeneratePayload,
+    background_tasks: BackgroundTasks,
+) -> dict[str, Any]:
     project = _project_or_404(project_id)
     if payload.toc_start < 1 or payload.toc_end < 1:
         raise HTTPException(status_code=400, detail="TOC page range must be one-based and >= 1")
@@ -175,25 +218,22 @@ def generate_project_toc(project_id: str, payload: GeneratePayload) -> dict[str,
     if not api_key:
         raise HTTPException(status_code=400, detail="LLM API key is not configured")
 
-    try:
-        toc_data, _, _, _, stats = extract_toc_json(
-            input_pdf=store.pdf_path(project_id),
-            toc_start=payload.toc_start - 1,
-            toc_end=payload.toc_end - 1,
-            api_key=api_key,
-            base_url=str(settings.get("base_url") or ""),
-            model=str(settings.get("model") or ""),
-            dpi=220,
-            cache_dir=store.cache_dir(),
-            overwrite_cache=False,
-            mode="flat",
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    job = generation_job_store.create_job(
+        project_id=project_id,
+        toc_start=payload.toc_start,
+        toc_end=payload.toc_end,
+    )
+    background_tasks.add_task(_run_generate_toc_job, job["id"], project_id, payload, settings)
+    return {"job": job}
 
-    toc_text = json.dumps(toc_data, ensure_ascii=False, indent=2)
-    metadata = store.save_toc_text(project_id, toc_text, generated=True)
-    return {"project": metadata, "toc_json": toc_text, "stats": stats}
+
+@router.get("/jobs/{job_id}")
+def get_generation_job(job_id: str) -> dict[str, Any]:
+    try:
+        job = generation_job_store.get_job(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Job not found") from exc
+    return {"job": job}
 
 
 @router.get("/settings/llm")

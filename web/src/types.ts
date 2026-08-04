@@ -51,3 +51,24 @@ export type PreviewPdf = {
   url: string;
   filename: string;
 };
+
+export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed";
+
+export type GenerationJob = {
+  id: string;
+  type: "generate_toc";
+  project_id: string;
+  status: GenerationJobStatus;
+  message: string;
+  toc_start: number;
+  toc_end: number;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+  result: {
+    project?: Project;
+    stats?: Record<string, unknown>;
+  } | null;
+};

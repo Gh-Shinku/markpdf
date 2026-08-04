@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from server.bookmark_server.main import app
 from server.bookmark_server.routes import projects as projects_route
+from server.bookmark_server.services.generation_jobs import GenerationJobStore
 from server.bookmark_server.services.projects import ProjectStore
 
 
@@ -18,8 +19,11 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def isolated_project_store(tmp_path, monkeypatch) -> ProjectStore:
-    store = ProjectStore(tmp_path / "workspace_data")
+    root = tmp_path / "workspace_data"
+    store = ProjectStore(root)
+    job_store = GenerationJobStore(root)
     monkeypatch.setattr(projects_route, "store", store)
+    monkeypatch.setattr(projects_route, "generation_job_store", job_store)
     return store
 
 
@@ -155,9 +159,46 @@ def test_generate_toc_overwrites_saved_json(tmp_path, monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["project"]["generated_at"] is not None
+    job_id = response.json()["job"]["id"]
+
+    job_response = client.get(f"/api/jobs/{job_id}")
+    assert job_response.status_code == 200
+    job = job_response.json()["job"]
+    assert job["status"] == "succeeded"
+    assert job["result"]["project"]["generated_at"] is not None
     saved_toc = client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"]
     assert json.loads(saved_toc)[0]["title"] == "Generated"
+
+
+def test_generate_failure_preserves_saved_json(tmp_path, monkeypatch) -> None:
+    project = _create_project(tmp_path, page_count=3)
+    original_toc = client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"]
+    client.put(
+        "/api/settings/llm",
+        json={
+            "base_url": "https://example.test/v1",
+            "model": "model-a",
+            "api_key": "secret",
+        },
+    )
+
+    def fake_extract_toc_json(**kwargs):
+        raise ValueError("VLM rejected the image")
+
+    monkeypatch.setattr(projects_route, "extract_toc_json", fake_extract_toc_json)
+
+    response = client.post(
+        f"/api/projects/{project['id']}/generate-toc",
+        json={"toc_start": 1, "toc_end": 1},
+    )
+
+    assert response.status_code == 200
+    job_id = response.json()["job"]["id"]
+    job = client.get(f"/api/jobs/{job_id}").json()["job"]
+    assert job["status"] == "failed"
+    assert "VLM rejected" in job["error"]
+    saved_toc = client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"]
+    assert saved_toc == original_toc
 
 
 def test_generate_requires_api_key(tmp_path) -> None:
@@ -170,3 +211,37 @@ def test_generate_requires_api_key(tmp_path) -> None:
 
     assert response.status_code == 400
     assert "API key" in response.json()["detail"]
+
+
+def test_generation_job_persists_on_disk(tmp_path, isolated_project_store, monkeypatch) -> None:
+    project = _create_project(tmp_path, page_count=3)
+    client.put(
+        "/api/settings/llm",
+        json={
+            "base_url": "https://example.test/v1",
+            "model": "model-a",
+            "api_key": "secret",
+        },
+    )
+
+    def fake_extract_toc_json(**kwargs):
+        return (
+            [{"title": "Persisted", "page": 1, "attribute": "relative", "children": []}],
+            Path("cache.json"),
+            False,
+            None,
+            {"vlm_calls": 1},
+        )
+
+    monkeypatch.setattr(projects_route, "extract_toc_json", fake_extract_toc_json)
+
+    response = client.post(
+        f"/api/projects/{project['id']}/generate-toc",
+        json={"toc_start": 1, "toc_end": 1},
+    )
+
+    job_id = response.json()["job"]["id"]
+    reloaded_store = GenerationJobStore(isolated_project_store.root)
+    reloaded_job = reloaded_store.get_job(job_id)
+    assert reloaded_job["status"] == "succeeded"
+    assert reloaded_job["project_id"] == project["id"]

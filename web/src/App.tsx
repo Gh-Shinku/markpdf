@@ -15,6 +15,7 @@ import { SettingsView } from "./components/SettingsView";
 import { WorkspaceView } from "./components/WorkspaceView";
 import type { JsonEditorHandle } from "./JsonEditor";
 import type {
+  GenerationJob,
   PreviewPdf,
   Project,
   SettingsDraft,
@@ -51,6 +52,7 @@ export function App() {
   const [tocEnd, setTocEnd] = useState("1");
   const [dirty, setDirty] = useState(false);
   const [pdfVersion, setPdfVersion] = useState(0);
+  const [activeGenerationJobId, setActiveGenerationJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>({
     kind: "idle",
     message: "Select a project or create one from a PDF"
@@ -104,6 +106,62 @@ export function App() {
     };
   }, [previewPdf]);
 
+  useEffect(() => {
+    if (!activeGenerationJobId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function pollGenerationJob() {
+      try {
+        const data = await requestJson<{ job: GenerationJob }>(
+          `/api/jobs/${activeGenerationJobId}`,
+        );
+        if (cancelled) {
+          return;
+        }
+
+        if (data.job.status === "queued" || data.job.status === "running") {
+          setStatus({ kind: "loading", message: data.job.message });
+          return;
+        }
+
+        setActiveGenerationJobId(null);
+        if (data.job.status === "failed") {
+          setStatus({
+            kind: "error",
+            message: data.job.error || data.job.message || "TOC generation failed"
+          });
+          return;
+        }
+
+        if (data.job.project_id === project?.id) {
+          await reloadProject(project.id);
+          clearPreviewPdf();
+        }
+        setStatus({ kind: "success", message: data.job.message });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setActiveGenerationJobId(null);
+        setStatus({
+          kind: "error",
+          message: error instanceof Error ? error.message : "Failed to poll generation job"
+        });
+      }
+    }
+
+    void pollGenerationJob();
+    const intervalId = window.setInterval(() => void pollGenerationJob(), 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeGenerationJobId, project?.id]);
+
   const workspaceStyle = {
     "--editor-split": `${splitPercent}%`
   } as CSSProperties;
@@ -150,13 +208,7 @@ export function App() {
     setStatus({ kind: "loading", message: "Loading project" });
     clearPreviewPdf();
     try {
-      const [projectData, tocData] = await Promise.all([
-        requestJson<{ project: Project }>(`/api/projects/${projectId}`),
-        requestJson<{ toc_json: string }>(`/api/projects/${projectId}/toc`)
-      ]);
-      setProject(projectData.project);
-      setTocText(tocData.toc_json);
-      setPageOffset(String(projectData.project.page_offset ?? 0));
+      await reloadProject(projectId);
       setDirty(false);
       setPdfVersion((value) => value + 1);
       setView({ kind: "workspace", projectId });
@@ -167,6 +219,17 @@ export function App() {
         message: error instanceof Error ? error.message : "Failed to load project"
       });
     }
+  }
+
+  async function reloadProject(projectId: string) {
+    const [projectData, tocData] = await Promise.all([
+      requestJson<{ project: Project }>(`/api/projects/${projectId}`),
+      requestJson<{ toc_json: string }>(`/api/projects/${projectId}/toc`)
+    ]);
+    setProject(projectData.project);
+    setTocText(tocData.toc_json);
+    setPageOffset(String(projectData.project.page_offset ?? 0));
+    setDirty(false);
   }
 
   function returnHome() {
@@ -378,20 +441,16 @@ export function App() {
     setGenerateDialogOpen(false);
     setStatus({ kind: "loading", message: "Generating TOC JSON with LLM" });
     try {
-      const data = await requestJson<{ project: Project; toc_json: string }>(
+      const data = await requestJson<{ job: GenerationJob }>(
         `/api/projects/${project.id}/generate-toc`,
         {
           method: "POST",
           body: JSON.stringify({ toc_start: start, toc_end: end })
         }
       );
-      setProject(data.project);
-      setTocText(data.toc_json);
-      setPageOffset(String(data.project.page_offset ?? 0));
-      setDirty(false);
+      setActiveGenerationJobId(data.job.id);
       clearPreviewPdf();
-      await loadProjects();
-      setStatus({ kind: "success", message: "Generated TOC replaced the project JSON" });
+      setStatus({ kind: "loading", message: data.job.message });
     } catch (error) {
       setStatus({
         kind: "error",
