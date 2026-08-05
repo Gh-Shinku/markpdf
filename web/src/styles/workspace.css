@@ -52,7 +52,7 @@
 }
 
 .toc-editor-workspace.explorer-open {
-  grid-template-columns: minmax(160px, 190px) minmax(0, 1fr);
+  grid-template-columns: minmax(140px, var(--toc-explorer-width, 190px)) 6px minmax(0, 1fr);
 }
 
 .toc-file-explorer {
@@ -121,6 +121,32 @@
   color: var(--text);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.toc-file-explorer-splitter {
+  position: relative;
+  min-width: 6px;
+  min-height: 0;
+  background: color-mix(in srgb, var(--surface-subtle) 88%, var(--canvas));
+  cursor: col-resize;
+  outline: none;
+}
+
+.toc-file-explorer-splitter::before {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  background: var(--accent);
+  opacity: 0;
+}
+
+.toc-file-explorer-splitter:hover::before,
+.toc-file-explorer-splitter:focus-visible::before {
+  opacity: 0.65;
+}
+
+.toc-file-explorer-splitter:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .preview-pane {
@@ -273,7 +299,7 @@
   }
 
   .toc-editor-workspace.explorer-open {
-    grid-template-columns: minmax(140px, 170px) minmax(0, 1fr);
+    grid-template-columns: minmax(140px, var(--toc-explorer-width, 170px)) 6px minmax(0, 1fr);
   }
 }
 

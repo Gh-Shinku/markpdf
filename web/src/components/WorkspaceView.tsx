@@ -4,7 +4,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   RefObject,
 } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ArrowLeft,
   BookMarked,
@@ -23,6 +23,11 @@ import type { Project } from "../types";
 import type { TocFile } from "../types";
 import { PdfViewer } from "./PdfViewer";
 import { makeBookmarkedFilename } from "../utils";
+
+const DEFAULT_FILE_EXPLORER_WIDTH = 190;
+const MIN_FILE_EXPLORER_WIDTH = 140;
+const MAX_FILE_EXPLORER_WIDTH = 320;
+const MIN_EDITOR_WIDTH = 260;
 
 type WorkspaceViewProps = {
   project: Project | null;
@@ -91,9 +96,72 @@ export function WorkspaceView({
 }: WorkspaceViewProps) {
   const pdfFrameSrc = project ? `/api/projects/${project.id}/pdf?v=${pdfVersion}` : "";
   const [isFileExplorerOpen, setFileExplorerOpen] = useState(false);
+  const [fileExplorerWidth, setFileExplorerWidth] = useState(DEFAULT_FILE_EXPLORER_WIDTH);
+  const [isFileExplorerResizing, setFileExplorerResizing] = useState(false);
+  const tocWorkspaceRef = useRef<HTMLDivElement | null>(null);
+  const isDraggingFileExplorerRef = useRef(false);
+  const tocExplorerStyle = {
+    "--toc-explorer-width": `${fileExplorerWidth}px`,
+  } as CSSProperties;
+
+  function clampFileExplorerWidth(value: number): number {
+    const bounds = tocWorkspaceRef.current?.getBoundingClientRect();
+    const availableMax = bounds?.width
+      ? Math.max(MIN_FILE_EXPLORER_WIDTH, bounds.width - MIN_EDITOR_WIDTH)
+      : MAX_FILE_EXPLORER_WIDTH;
+    return Math.min(
+      Math.min(MAX_FILE_EXPLORER_WIDTH, availableMax),
+      Math.max(MIN_FILE_EXPLORER_WIDTH, value),
+    );
+  }
+
+  function updateFileExplorerWidth(clientX: number) {
+    const bounds = tocWorkspaceRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setFileExplorerWidth(clampFileExplorerWidth(clientX - bounds.left));
+  }
+
+  function onFileExplorerSplitterPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    isDraggingFileExplorerRef.current = true;
+    setFileExplorerResizing(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateFileExplorerWidth(event.clientX);
+  }
+
+  function onFileExplorerSplitterPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!isDraggingFileExplorerRef.current) return;
+    event.preventDefault();
+    updateFileExplorerWidth(event.clientX);
+  }
+
+  function stopFileExplorerResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    isDraggingFileExplorerRef.current = false;
+    setFileExplorerResizing(false);
+  }
+
+  function onFileExplorerSplitterKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setFileExplorerWidth((value) => clampFileExplorerWidth(value - 12));
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setFileExplorerWidth((value) => clampFileExplorerWidth(value + 12));
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setFileExplorerWidth(MIN_FILE_EXPLORER_WIDTH);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setFileExplorerWidth(clampFileExplorerWidth(MAX_FILE_EXPLORER_WIDTH));
+    }
+  }
 
   return (
-    <main className={`app-shell${isResizing ? " resizing" : ""}`}>
+    <main className={`app-shell${isResizing || isFileExplorerResizing ? " resizing" : ""}`}>
       <AppNavigation
         active="workspace"
         onHome={onReturnHome}
@@ -138,7 +206,11 @@ export function WorkspaceView({
               AI Generate
             </button>
           </div>
-          <div className={`toc-editor-workspace${isFileExplorerOpen ? " explorer-open" : ""}`}>
+          <div
+            className={`toc-editor-workspace${isFileExplorerOpen ? " explorer-open" : ""}`}
+            ref={tocWorkspaceRef}
+            style={tocExplorerStyle}
+          >
             <aside
               className="toc-file-explorer"
               id="toc-file-explorer"
@@ -159,6 +231,23 @@ export function WorkspaceView({
                 </button>
               ))}
             </aside>
+            {isFileExplorerOpen ? (
+              <div
+                className="toc-file-explorer-splitter"
+                role="separator"
+                aria-label="Resize file explorer"
+                aria-orientation="vertical"
+                aria-valuemin={MIN_FILE_EXPLORER_WIDTH}
+                aria-valuemax={MAX_FILE_EXPLORER_WIDTH}
+                aria-valuenow={Math.round(fileExplorerWidth)}
+                tabIndex={0}
+                onKeyDown={onFileExplorerSplitterKeyDown}
+                onPointerDown={onFileExplorerSplitterPointerDown}
+                onPointerMove={onFileExplorerSplitterPointerMove}
+                onPointerUp={stopFileExplorerResize}
+                onPointerCancel={stopFileExplorerResize}
+              />
+            ) : null}
             <JsonEditor ref={editorRef} value={tocText} theme={theme} onChange={onEditorChange} />
           </div>
         </section>
