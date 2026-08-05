@@ -26,7 +26,9 @@ class TocPayload(BaseModel):
 
 
 class ProjectMetadataPayload(BaseModel):
-    page_offset: int
+    page_offset: int | None = None
+    toc_start: int | None = None
+    toc_end: int | None = None
 
 
 class ValidatePayload(BaseModel):
@@ -43,6 +45,7 @@ class GeneratePayload(BaseModel):
     toc_start: int
     toc_end: int
     provider_id: str
+    page_offset: int | None = None
 
 
 class LlmSettingsPayload(BaseModel):
@@ -100,6 +103,18 @@ def _validate_generation(project: dict[str, Any], payload: GeneratePayload) -> d
     if generation_job_store.find_active_job(str(project["id"])) is not None:
         raise HTTPException(status_code=409, detail="TOC generation is already running for this project")
     return _provider_or_400(payload.provider_id)
+
+
+def _validate_metadata(project: dict[str, Any], payload: ProjectMetadataPayload) -> ProjectMetadataPayload:
+    toc_start = payload.toc_start if payload.toc_start is not None else int(project.get("toc_start") or 1)
+    toc_end = payload.toc_end if payload.toc_end is not None else int(project.get("toc_end") or project.get("page_count") or 0)
+    if toc_start < 1 or toc_end < 1:
+        raise HTTPException(status_code=400, detail="TOC page range must be one-based and >= 1")
+    if toc_start > toc_end:
+        raise HTTPException(status_code=400, detail="TOC start page must be <= TOC end page")
+    if toc_end > int(project.get("page_count") or 0):
+        raise HTTPException(status_code=400, detail="TOC end page exceeds PDF page count")
+    return payload
 
 
 def _run_generate_toc_job(
@@ -254,8 +269,14 @@ def save_project_toc(project_id: str, payload: TocPayload) -> dict[str, Any]:
 
 @router.put("/projects/{project_id}/metadata")
 def update_project_metadata(project_id: str, payload: ProjectMetadataPayload) -> dict[str, Any]:
-    _project_or_404(project_id)
-    metadata = store.update_project_metadata(project_id, payload.page_offset)
+    project = _project_or_404(project_id)
+    _validate_metadata(project, payload)
+    metadata = store.update_project_metadata(
+        project_id,
+        page_offset=payload.page_offset,
+        toc_start=payload.toc_start,
+        toc_end=payload.toc_end,
+    )
     return {"project": metadata}
 
 
@@ -346,6 +367,12 @@ def generate_project_toc(
 ) -> dict[str, Any]:
     project = _project_or_404(project_id)
     settings = _validate_generation(project, payload)
+    store.update_project_metadata(
+        project_id,
+        page_offset=payload.page_offset,
+        toc_start=payload.toc_start,
+        toc_end=payload.toc_end,
+    )
 
     job = generation_job_store.create_job(
         project_id=project_id,
@@ -376,6 +403,12 @@ def generate_toc_batch(payload: dict[str, Any], background_tasks: BackgroundTask
         prepared.append((project_id, request, _validate_generation(_project_or_404(project_id), request)))
     jobs = []
     for project_id, request, settings in prepared:
+        store.update_project_metadata(
+            project_id,
+            page_offset=request.page_offset,
+            toc_start=request.toc_start,
+            toc_end=request.toc_end,
+        )
         job = generation_job_store.create_job(project_id, request.toc_start, request.toc_end, _provider_snapshot(settings))
         generation_executor.submit(_run_generate_toc_job, job["id"], project_id, request, settings)
         jobs.append(job)

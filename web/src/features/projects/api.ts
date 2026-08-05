@@ -51,12 +51,29 @@ export async function saveProjectToc(projectId: string, tocJson: string): Promis
   return data.project;
 }
 
-export async function saveProjectOffset(projectId: string, pageOffset: number): Promise<Project> {
+export type ProjectMetadataUpdate = {
+  pageOffset?: number;
+  tocStart?: number;
+  tocEnd?: number;
+};
+
+export async function saveProjectMetadata(
+  projectId: string,
+  metadata: ProjectMetadataUpdate,
+): Promise<Project> {
   const data = await requestJson<{ project: Project }>(`/api/projects/${projectId}/metadata`, {
     method: "PUT",
-    body: JSON.stringify({ page_offset: pageOffset }),
+    body: JSON.stringify({
+      page_offset: metadata.pageOffset,
+      toc_start: metadata.tocStart,
+      toc_end: metadata.tocEnd,
+    }),
   });
   return data.project;
+}
+
+export function saveProjectOffset(projectId: string, pageOffset: number): Promise<Project> {
+  return saveProjectMetadata(projectId, { pageOffset });
 }
 
 export async function applyProject(
@@ -80,12 +97,18 @@ export async function generateProjectToc(
   tocStart: number,
   tocEnd: number,
   providerId: string,
+  pageOffset?: number,
 ): Promise<GenerationJob> {
   const data = await requestJson<{ job: GenerationJob }>(
     `/api/projects/${projectId}/generate-toc`,
     {
       method: "POST",
-      body: JSON.stringify({ toc_start: tocStart, toc_end: tocEnd, provider_id: providerId }),
+      body: JSON.stringify({
+        toc_start: tocStart,
+        toc_end: tocEnd,
+        provider_id: providerId,
+        page_offset: pageOffset,
+      }),
     },
   );
   return data.job;
@@ -129,7 +152,13 @@ export async function applyProjectTocFile(
 }
 
 export async function batchGenerateProjectTocs(
-  requests: Array<{ projectId: string; tocStart: number; tocEnd: number; providerId: string }>,
+  requests: Array<{
+    projectId: string;
+    tocStart: number;
+    tocEnd: number;
+    pageOffset: number;
+    providerId: string;
+  }>,
 ): Promise<GenerationJob[]> {
   const data = await requestJson<{ jobs: GenerationJob[] }>("/api/generation-jobs/batch", {
     method: "POST",
@@ -138,6 +167,7 @@ export async function batchGenerateProjectTocs(
         project_id: item.projectId,
         toc_start: item.tocStart,
         toc_end: item.tocEnd,
+        page_offset: item.pageOffset,
         provider_id: item.providerId,
       })),
     }),

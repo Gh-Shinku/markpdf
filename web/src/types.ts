@@ -15,6 +15,8 @@ export type Project = {
   pdf_filename: string;
   toc_filename: string | null;
   page_offset: number;
+  toc_start: number;
+  toc_end: number;
   page_count: number;
   created_at: string;
   updated_at: string;

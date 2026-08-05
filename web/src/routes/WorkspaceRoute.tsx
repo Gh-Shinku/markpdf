@@ -20,7 +20,7 @@ import {
   listProjectGenerationJobs,
   listProjectTocFiles,
   projectKeys,
-  saveProjectOffset,
+  saveProjectMetadata,
   saveProjectTocFile,
 } from "../features/projects/api";
 
@@ -52,8 +52,10 @@ export function WorkspaceRoute() {
   const [isStartingGeneration, setIsStartingGeneration] = useState(false);
   const savedTocRef = useRef("");
   const savedOffsetRef = useRef("0");
+  const savedTocStartRef = useRef("1");
+  const savedTocEndRef = useRef("1");
   const tocSaveSequenceRef = useRef(0);
-  const offsetSaveSequenceRef = useRef(0);
+  const metadataSaveSequenceRef = useRef(0);
   const handledJobsRef = useRef(new Set<string>());
   const handledJobsProjectRef = useRef("");
   const projectQuery = useQuery({
@@ -102,12 +104,22 @@ export function WorkspaceRoute() {
     },
     onError: (error) => toast.error(`Could not save TOC JSON: ${error.message}`),
   });
-  const { mutate: mutateOffset, mutateAsync: mutateOffsetAsync } = useMutation({
-    mutationFn: ({ value }: { value: number; sequence: number }) =>
-      saveProjectOffset(projectId, value),
+  const { mutate: mutateMetadata, mutateAsync: mutateMetadataAsync } = useMutation({
+    mutationFn: ({
+      pageOffset,
+      tocStart,
+      tocEnd,
+    }: {
+      pageOffset: number;
+      tocStart: number;
+      tocEnd: number;
+      sequence: number;
+    }) => saveProjectMetadata(projectId, { pageOffset, tocStart, tocEnd }),
     onSuccess: (project, variables) => {
-      if (variables.sequence !== offsetSaveSequenceRef.current) return;
-      savedOffsetRef.current = String(variables.value);
+      if (variables.sequence !== metadataSaveSequenceRef.current) return;
+      savedOffsetRef.current = String(variables.pageOffset);
+      savedTocStartRef.current = String(variables.tocStart);
+      savedTocEndRef.current = String(variables.tocEnd);
       queryClient.setQueryData(projectKeys.detail(projectId), project);
     },
     onError: (error) => toast.error(error.message),
@@ -125,8 +137,10 @@ export function WorkspaceRoute() {
     savedTocRef.current = toc;
     setPageOffset(String(project.page_offset ?? 0));
     savedOffsetRef.current = String(project.page_offset ?? 0);
-    setTocStart("1");
-    setTocEnd(String(project.page_count));
+    setTocStart(String(project.toc_start ?? 1));
+    savedTocStartRef.current = String(project.toc_start ?? 1);
+    setTocEnd(String(project.toc_end ?? project.page_count));
+    savedTocEndRef.current = String(project.toc_end ?? project.page_count);
   }, [projectId, projectQuery.data, tocQuery.data]);
   useEffect(() => {
     if (!verifiedProviders.some((provider) => provider.id === providerId))
@@ -139,13 +153,41 @@ export function WorkspaceRoute() {
     return () => window.clearTimeout(timer);
   }, [projectId, projectQuery.data, mutateToc, tocText, selectedTocFileId]);
   useEffect(() => {
-    if (!projectId || !projectQuery.data || pageOffset === savedOffsetRef.current) return;
-    const value = Number.parseInt(pageOffset, 10);
-    if (!Number.isInteger(value)) return;
-    const sequence = ++offsetSaveSequenceRef.current;
-    const timer = window.setTimeout(() => mutateOffset({ value, sequence }), 500);
+    if (!projectId || !projectQuery.data) return;
+    if (
+      pageOffset === savedOffsetRef.current &&
+      tocStart === savedTocStartRef.current &&
+      tocEnd === savedTocEndRef.current
+    )
+      return;
+    const parsedOffset = Number.parseInt(pageOffset, 10);
+    const parsedStart = Number.parseInt(tocStart, 10);
+    const parsedEnd = Number.parseInt(tocEnd, 10);
+    if (
+      !Number.isInteger(parsedOffset) ||
+      !Number.isInteger(parsedStart) ||
+      !Number.isInteger(parsedEnd)
+    )
+      return;
+    if (
+      parsedStart < 1 ||
+      parsedEnd < parsedStart ||
+      parsedEnd > Number(projectQuery.data.page_count)
+    )
+      return;
+    const sequence = ++metadataSaveSequenceRef.current;
+    const timer = window.setTimeout(
+      () =>
+        mutateMetadata({
+          pageOffset: parsedOffset,
+          tocStart: parsedStart,
+          tocEnd: parsedEnd,
+          sequence,
+        }),
+      500,
+    );
     return () => window.clearTimeout(timer);
-  }, [mutateOffset, pageOffset, projectId, projectQuery.data]);
+  }, [mutateMetadata, pageOffset, projectId, projectQuery.data, tocEnd, tocStart]);
   useEffect(() => {
     const openFind = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
@@ -177,15 +219,27 @@ export function WorkspaceRoute() {
 
   async function flushAutosave() {
     const offset = Number.parseInt(pageOffset, 10);
+    const start = Number.parseInt(tocStart, 10);
+    const end = Number.parseInt(tocEnd, 10);
     if (!Number.isInteger(offset)) throw new Error("Page offset must be an integer");
+    if (!Number.isInteger(start) || !Number.isInteger(end))
+      throw new Error("TOC page range must be valid");
+    if (start < 1 || end < start || end > Number(projectQuery.data?.page_count ?? 0))
+      throw new Error("TOC page range is outside the PDF page count");
     const pending: Promise<unknown>[] = [];
     if (tocText !== savedTocRef.current) {
       const sequence = ++tocSaveSequenceRef.current;
       pending.push(mutateTocAsync({ value: tocText, sequence }));
     }
-    if (pageOffset !== savedOffsetRef.current) {
-      const sequence = ++offsetSaveSequenceRef.current;
-      pending.push(mutateOffsetAsync({ value: offset, sequence }));
+    if (
+      pageOffset !== savedOffsetRef.current ||
+      tocStart !== savedTocStartRef.current ||
+      tocEnd !== savedTocEndRef.current
+    ) {
+      const sequence = ++metadataSaveSequenceRef.current;
+      pending.push(
+        mutateMetadataAsync({ pageOffset: offset, tocStart: start, tocEnd: end, sequence }),
+      );
     }
     await Promise.all(pending);
     return offset;
@@ -214,7 +268,8 @@ export function WorkspaceRoute() {
     }
     setIsStartingGeneration(true);
     try {
-      const job = await generateProjectToc(projectId, start, end, providerId);
+      const offset = await flushAutosave();
+      const job = await generateProjectToc(projectId, start, end, providerId, offset);
       queryClient.setQueryData(
         projectKeys.generationJobs(projectId),
         (current: typeof generationJobs | undefined) => [job, ...(current ?? [])],

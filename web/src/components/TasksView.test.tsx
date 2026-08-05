@@ -9,6 +9,8 @@ const project: Project = {
   pdf_filename: "book.pdf",
   toc_filename: "toc.json",
   page_offset: 0,
+  toc_start: 1,
+  toc_end: 10,
   page_count: 10,
   created_at: "2026-08-05T00:00:00Z",
   updated_at: "2026-08-05T00:00:00Z",

@@ -71,7 +71,7 @@ class ProjectStore:
         projects: list[dict[str, Any]] = []
         for metadata_file in self.projects_dir.glob("*/project.json"):
             try:
-                projects.append(json.loads(metadata_file.read_text(encoding="utf-8")))
+                projects.append(self._normalize_metadata(json.loads(metadata_file.read_text(encoding="utf-8"))))
             except (OSError, json.JSONDecodeError):
                 continue
         return sorted(projects, key=lambda item: item.get("updated_at", ""), reverse=True)
@@ -102,6 +102,8 @@ class ProjectStore:
             "pdf_filename": pdf_filename or "source.pdf",
             "toc_filename": toc_filename,
             "page_offset": page_offset,
+            "toc_start": 1,
+            "toc_end": page_count,
             "page_count": page_count,
             "created_at": now,
             "updated_at": now,
@@ -116,7 +118,7 @@ class ProjectStore:
         metadata_file = self._project_dir(project_id) / "project.json"
         if not metadata_file.exists():
             raise KeyError(project_id)
-        return json.loads(metadata_file.read_text(encoding="utf-8"))
+        return self._normalize_metadata(json.loads(metadata_file.read_text(encoding="utf-8")))
 
     def delete_project(self, project_id: str) -> None:
         project_dir = self._project_dir(project_id)
@@ -141,9 +143,21 @@ class ProjectStore:
         self._write_metadata(project_id, metadata)
         return metadata
 
-    def update_project_metadata(self, project_id: str, page_offset: int) -> dict[str, Any]:
+    def update_project_metadata(
+        self,
+        project_id: str,
+        *,
+        page_offset: int | None = None,
+        toc_start: int | None = None,
+        toc_end: int | None = None,
+    ) -> dict[str, Any]:
         metadata = self.get_project(project_id)
-        metadata["page_offset"] = page_offset
+        if page_offset is not None:
+            metadata["page_offset"] = page_offset
+        if toc_start is not None:
+            metadata["toc_start"] = toc_start
+        if toc_end is not None:
+            metadata["toc_end"] = toc_end
         metadata["updated_at"] = utc_now_iso()
         self._write_metadata(project_id, metadata)
         return metadata
@@ -378,6 +392,14 @@ class ProjectStore:
 
     def _project_dir(self, project_id: str) -> Path:
         return self.projects_dir / project_id
+
+    def _normalize_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        page_count = int(metadata.get("page_count") or 0)
+        normalized = dict(metadata)
+        normalized["page_offset"] = int(normalized.get("page_offset") or 0)
+        normalized["toc_start"] = int(normalized.get("toc_start") or 1)
+        normalized["toc_end"] = int(normalized.get("toc_end") or page_count)
+        return normalized
 
     def _write_metadata(self, project_id: str, metadata: dict[str, Any]) -> None:
         project_dir = self._project_dir(project_id)

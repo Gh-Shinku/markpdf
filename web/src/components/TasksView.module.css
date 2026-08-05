@@ -138,6 +138,70 @@
   opacity: 0.55;
 }
 
+.metaEditor {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.metaEditorHeader,
+.metaEditorRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(82px, 112px));
+  align-items: center;
+  gap: 8px;
+}
+
+.metaEditorHeader {
+  min-height: 32px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-muted);
+  background: var(--surface-subtle);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.metaEditorRow {
+  min-height: 40px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.metaEditorRow:last-child {
+  border-bottom: 0;
+}
+
+.metaEditorRow > span {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metaEditorRow input {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.metaEditorRow.invalid {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.metaEditorRow.invalid input {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+
 .taskPanel {
   display: grid;
   overflow: hidden;
@@ -391,6 +455,16 @@
 
   .filters button {
     flex: 1 0 auto;
+  }
+
+  .metaEditor {
+    overflow-x: auto;
+  }
+
+  .metaEditorHeader,
+  .metaEditorRow {
+    grid-template-columns: minmax(160px, 1fr) repeat(3, 86px);
+    min-width: 460px;
   }
 
   .task {

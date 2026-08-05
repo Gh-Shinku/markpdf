@@ -5,7 +5,7 @@ import { AppNavigation } from "./AppNavigation";
 
 type HomeViewProps = {
   projects: Project[];
-  onCreateProject: (file: File | null) => Promise<void>;
+  onCreateProjects: (files: File[]) => void;
   onCreateProjectInput: (event: ChangeEvent<HTMLInputElement>) => void;
   onOpenProject: (projectId: string) => void;
   onDeleteProject: (projectId: string) => void;
@@ -15,7 +15,7 @@ type HomeViewProps = {
 
 export function HomeView({
   projects,
-  onCreateProject,
+  onCreateProjects,
   onCreateProjectInput,
   onOpenProject,
   onDeleteProject,
@@ -32,7 +32,7 @@ export function HomeView({
   function handleDrop(event: DragEvent<HTMLElement>) {
     event.preventDefault();
     setIsDragging(false);
-    void onCreateProject(event.dataTransfer.files[0] ?? null);
+    onCreateProjects(Array.from(event.dataTransfer.files));
   }
 
   return (
@@ -66,13 +66,14 @@ export function HomeView({
           </div>
           <div>
             <h2>Create a project</h2>
-            <p>Drop a PDF here, or choose one from your computer.</p>
+            <p>Drop PDFs here, or choose one or more from your computer.</p>
           </div>
           <input
             id="project-import"
             className="import-file-input"
             type="file"
             accept="application/pdf,.pdf"
+            multiple
             onChange={onCreateProjectInput}
           />
         </label>
