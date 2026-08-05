@@ -8,12 +8,7 @@ type AppNavigationProps = {
   onSettings: () => void;
 };
 
-export function AppNavigation({
-  active,
-  onHome,
-  onTasks,
-  onSettings
-}: AppNavigationProps) {
+export function AppNavigation({ active, onHome, onTasks, onSettings }: AppNavigationProps) {
   return (
     <aside className={styles.navigation} aria-label="Application navigation">
       <button className={styles.mark} type="button" aria-label="All projects" onClick={onHome}>

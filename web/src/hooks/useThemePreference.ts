@@ -11,7 +11,9 @@ function readThemePreference(): ThemePreference {
 
 export function useThemePreference() {
   const [preference, setPreference] = useState<ThemePreference>(readThemePreference);
-  const [prefersDark, setPrefersDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [prefersDark, setPrefersDark] = useState(
+    () => window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
   const theme = preference === "system" ? (prefersDark ? "dark" : "light") : preference;
 
   useEffect(() => {

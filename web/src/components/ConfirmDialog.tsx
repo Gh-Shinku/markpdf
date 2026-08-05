@@ -17,13 +17,18 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   tone = "default",
   onCancel,
-  onConfirm
+  onConfirm,
 }: ConfirmDialogProps) {
   const confirmClassName = tone === "danger" ? "danger-action" : "primary-action";
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <section
+        className="modal confirm-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+      >
         <div className="modal-header">
           <div className="confirm-title">
             <AlertTriangle size={18} />

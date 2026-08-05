@@ -35,16 +35,63 @@
   background: var(--accent-soft);
 }
 
-.actions { display: grid; gap: 5px; width: 100%; }
-.action { width: 40px; height: 40px; margin: 0 auto; border-radius: 7px; }
-.action span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.settings { margin-top: auto; }
+.actions {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+}
+.action {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto;
+  border-radius: 7px;
+}
+.action span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.settings {
+  margin-top: auto;
+}
 
 @media (max-width: 920px) {
-  .navigation { grid-row: 1; grid-column: 1; flex-direction: row; width: auto; height: 52px; padding: 6px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .mark { width: 36px; height: 36px; margin: 0 10px 0 0; }
-  .actions { display: flex; width: auto; }
-  .action { width: auto; height: 36px; padding: 0 9px; }
-  .action span { position: static; width: auto; height: auto; overflow: visible; clip: auto; margin-left: 6px; font-size: 12px; }
-  .settings { margin: 0 0 0 auto; }
+  .navigation {
+    grid-row: 1;
+    grid-column: 1;
+    flex-direction: row;
+    width: auto;
+    height: 52px;
+    padding: 6px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .mark {
+    width: 36px;
+    height: 36px;
+    margin: 0 10px 0 0;
+  }
+  .actions {
+    display: flex;
+    width: auto;
+  }
+  .action {
+    width: auto;
+    height: 36px;
+    padding: 0 9px;
+  }
+  .action span {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    margin-left: 6px;
+    font-size: 12px;
+  }
+  .settings {
+    margin: 0 0 0 auto;
+  }
 }

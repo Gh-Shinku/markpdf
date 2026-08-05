@@ -24,7 +24,7 @@ export function GenerateDialog({
   onTocEndChange,
   onProviderChange,
   onCancel,
-  onGenerate
+  onGenerate,
 }: GenerateDialogProps) {
   return (
     <div className="modal-backdrop" role="presentation">
@@ -42,7 +42,11 @@ export function GenerateDialog({
           <label>
             <span>VLM API</span>
             <select value={providerId} onChange={(event) => onProviderChange(event.target.value)}>
-              {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name} - {provider.model}</option>)}
+              {providers.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.name} - {provider.model}
+                </option>
+              ))}
             </select>
           </label>
           <label>

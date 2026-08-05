@@ -12,8 +12,14 @@ createRoot(document.getElementById("root") as HTMLElement).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <App />
-        <Toaster position="bottom-right" richColors closeButton duration={3000} swipeDirections={[]} />
+        <Toaster
+          position="bottom-right"
+          richColors
+          closeButton
+          duration={3000}
+          swipeDirections={[]}
+        />
       </BrowserRouter>
     </QueryClientProvider>
-  </React.StrictMode>
+  </React.StrictMode>,
 );

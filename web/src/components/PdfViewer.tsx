@@ -1,11 +1,12 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode
+  type ReactNode,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -17,7 +18,7 @@ import {
   Maximize2,
   Minus,
   Plus,
-  RotateCcw
+  RotateCcw,
 } from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
@@ -76,7 +77,10 @@ function clampScale(value: number): number {
 }
 
 function initialSidebarWidth(): number {
-  const savedWidth = Number.parseInt(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) ?? "", 10);
+  const savedWidth = Number.parseInt(
+    window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) ?? "",
+    10,
+  );
   return Number.isFinite(savedWidth)
     ? Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, savedWidth))
     : 220;
@@ -86,7 +90,7 @@ export function PdfViewer({
   source,
   toolbarStart,
   toolbarControlsExtra,
-  toolbarEnd
+  toolbarEnd,
 }: PdfViewerProps) {
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -133,15 +137,18 @@ export function PdfViewer({
     Math.floor(getMaxPageWidth(pageSizes) * scale) + PAGE_HORIZONTAL_PADDING * 2,
   );
 
-  function maxSidebarWidth(): number {
+  const maxSidebarWidth = useCallback((): number => {
     const viewerWidth = viewerRef.current?.getBoundingClientRect().width ?? 0;
     if (!viewerWidth) return MAX_SIDEBAR_WIDTH;
     return Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, viewerWidth - MIN_MAIN_WIDTH));
-  }
+  }, []);
 
-  function clampSidebarWidth(width: number): number {
-    return Math.min(maxSidebarWidth(), Math.max(MIN_SIDEBAR_WIDTH, width));
-  }
+  const clampSidebarWidth = useCallback(
+    (width: number): number => {
+      return Math.min(maxSidebarWidth(), Math.max(MIN_SIDEBAR_WIDTH, width));
+    },
+    [maxSidebarWidth],
+  );
 
   function updateSidebarWidth(clientX: number) {
     const bounds = viewerRef.current?.getBoundingClientRect();
@@ -175,7 +182,7 @@ export function PdfViewer({
     });
     observer.observe(viewer);
     return () => observer.disconnect();
-  }, []);
+  }, [clampSidebarWidth]);
 
   useEffect(() => {
     if (!source) {
@@ -242,7 +249,7 @@ export function PdfViewer({
         }
         setLoadState({
           kind: "error",
-          message: error instanceof Error ? error.message : "Failed to load PDF"
+          message: error instanceof Error ? error.message : "Failed to load PDF",
         });
       });
 
@@ -456,7 +463,10 @@ export function PdfViewer({
 
             <div className="pdf-sidebar-body" ref={sidebarBodyRef}>
               {sidebarTab === "thumbnails" ? (
-                <div className="pdf-thumbnail-list" style={{ height: thumbnailVirtualizer.getTotalSize() }}>
+                <div
+                  className="pdf-thumbnail-list"
+                  style={{ height: thumbnailVirtualizer.getTotalSize() }}
+                >
                   {virtualThumbnails.map((item) => {
                     const page = item.index + 1;
                     return (
@@ -512,7 +522,12 @@ export function PdfViewer({
           {toolbarStart ? <div className="pdf-toolbar-leading">{toolbarStart}</div> : null}
           <div className="pdf-toolbar-controls">
             {toolbarControlsExtra}
-            <button className="secondary-action icon-only" type="button" disabled={!isReady || pageNumber <= 1} onClick={previousPage}>
+            <button
+              className="secondary-action icon-only"
+              type="button"
+              disabled={!isReady || pageNumber <= 1}
+              onClick={previousPage}
+            >
               <ChevronLeft size={16} />
             </button>
             <label className="pdf-page-control">
@@ -529,21 +544,46 @@ export function PdfViewer({
               />
               <span>/ {pageCount || "-"}</span>
             </label>
-            <button className="secondary-action icon-only" type="button" disabled={!isReady || pageNumber >= pageCount} onClick={nextPage}>
+            <button
+              className="secondary-action icon-only"
+              type="button"
+              disabled={!isReady || pageNumber >= pageCount}
+              onClick={nextPage}
+            >
               <ChevronRight size={16} />
             </button>
             <span className="pdf-toolbar-separator" />
-            <button className="secondary-action icon-only" type="button" disabled={!isReady} onClick={zoomOut}>
+            <button
+              className="secondary-action icon-only"
+              type="button"
+              disabled={!isReady}
+              onClick={zoomOut}
+            >
               <Minus size={16} />
             </button>
             <span className="pdf-zoom-label">{Math.round(scale * 100)}%</span>
-            <button className="secondary-action icon-only" type="button" disabled={!isReady} onClick={zoomIn}>
+            <button
+              className="secondary-action icon-only"
+              type="button"
+              disabled={!isReady}
+              onClick={zoomIn}
+            >
               <Plus size={16} />
             </button>
-            <button className="secondary-action icon-only" type="button" disabled={!isReady} onClick={resetZoom}>
+            <button
+              className="secondary-action icon-only"
+              type="button"
+              disabled={!isReady}
+              onClick={resetZoom}
+            >
               <RotateCcw size={16} />
             </button>
-            <button className="secondary-action" type="button" disabled={!isReady} onClick={fitWidth}>
+            <button
+              className="secondary-action"
+              type="button"
+              disabled={!isReady}
+              onClick={fitWidth}
+            >
               <Maximize2 size={16} />
               Fit
             </button>
@@ -611,16 +651,17 @@ function PdfPageCanvas({
   pageNumber,
   scale,
   width,
-  height
+  height,
 }: PdfPageCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);
 
   useEffect(() => {
+    const canvas = canvasRef.current;
     return () => {
       renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
-      releaseCanvas(canvasRef.current);
+      releaseCanvas(canvas);
     };
   }, []);
 
@@ -669,10 +710,7 @@ function PdfPageCanvas({
   }, [document, pageNumber, scale]);
 
   return (
-    <div
-      className={`pdf-page-shell${isCurrent ? " current" : ""}`}
-      style={{ width, height }}
-    >
+    <div className={`pdf-page-shell${isCurrent ? " current" : ""}`} style={{ width, height }}>
       <canvas
         aria-label={`Page ${pageNumber}`}
         className="pdf-page-canvas"
@@ -696,10 +734,11 @@ function ThumbnailCanvas({ document, pageNumber, size }: ThumbnailCanvasProps) {
   const thumbHeight = getThumbnailHeight(size);
 
   useEffect(() => {
+    const canvas = canvasRef.current;
     return () => {
       renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
-      releaseCanvas(canvasRef.current);
+      releaseCanvas(canvas);
     };
   }, []);
 
@@ -747,7 +786,10 @@ function ThumbnailCanvas({ document, pageNumber, size }: ThumbnailCanvasProps) {
   }, [document, pageNumber, thumbScale]);
 
   return (
-    <div className="pdf-thumbnail-canvas-wrap" style={{ width: THUMBNAIL_WIDTH, height: thumbHeight }}>
+    <div
+      className="pdf-thumbnail-canvas-wrap"
+      style={{ width: THUMBNAIL_WIDTH, height: thumbHeight }}
+    >
       <canvas
         aria-label={`Page ${pageNumber} thumbnail`}
         className="pdf-thumbnail-canvas"
@@ -842,15 +884,16 @@ async function resolveOutlinePage(
     return null;
   }
 
-  const destination = typeof item.dest === "string"
-    ? await document.getDestination(item.dest)
-    : item.dest;
+  const destination =
+    typeof item.dest === "string" ? await document.getDestination(item.dest) : item.dest;
   const pageRef = Array.isArray(destination) ? destination[0] : null;
   if (!pageRef || typeof pageRef === "number") {
     return typeof pageRef === "number" ? pageRef + 1 : null;
   }
 
-  const pageIndex = await document.getPageIndex(pageRef as Parameters<PDFDocumentProxy["getPageIndex"]>[0]);
+  const pageIndex = await document.getPageIndex(
+    pageRef as Parameters<PDFDocumentProxy["getPageIndex"]>[0],
+  );
   return pageIndex + 1;
 }
 

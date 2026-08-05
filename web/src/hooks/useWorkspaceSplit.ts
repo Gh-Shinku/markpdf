@@ -60,5 +60,13 @@ export function useWorkspaceSplit(workspaceRef: RefObject<HTMLElement | null>) {
     }
   }
 
-  return { splitPercent, isResizing, onPointerDown, onPointerMove, onPointerUp: stop, onPointerCancel: stop, onKeyDown };
+  return {
+    splitPercent,
+    isResizing,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp: stop,
+    onPointerCancel: stop,
+    onKeyDown,
+  };
 }

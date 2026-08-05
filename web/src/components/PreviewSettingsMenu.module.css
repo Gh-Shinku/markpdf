@@ -18,18 +18,27 @@
 }
 
 .trigger:hover,
-.trigger[aria-expanded="true"] { background: var(--accent-strong); }
+.trigger[aria-expanded="true"] {
+  background: var(--accent-strong);
+}
 
-.trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 .actionGroup {
   display: inline-flex;
   align-items: stretch;
 }
 
-.previewButton { border-radius: 5px 0 0 5px; }
+.previewButton {
+  border-radius: 5px 0 0 5px;
+}
 
-.downloadButton { margin-left: 4px; }
+.downloadButton {
+  margin-left: 4px;
+}
 
 .popover {
   position: absolute;

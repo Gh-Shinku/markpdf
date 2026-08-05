@@ -6,10 +6,11 @@ export const projectKeys = {
   detail: (projectId: string) => ["projects", projectId] as const,
   toc: (projectId: string) => ["projects", projectId, "toc"] as const,
   tocFiles: (projectId: string) => ["projects", projectId, "toc-files"] as const,
-  tocFile: (projectId: string, tocFileId: string) => ["projects", projectId, "toc-files", tocFileId] as const,
+  tocFile: (projectId: string, tocFileId: string) =>
+    ["projects", projectId, "toc-files", tocFileId] as const,
   generationJobs: (projectId: string) => ["projects", projectId, "generation-jobs"] as const,
   allGenerationJobs: ["generation-jobs", "all"] as const,
-  job: (jobId: string) => ["generation-jobs", jobId] as const
+  job: (jobId: string) => ["generation-jobs", jobId] as const,
 };
 
 export async function listProjects(): Promise<Project[]> {
@@ -45,7 +46,7 @@ export function deleteProject(projectId: string): Promise<{ status: string }> {
 export async function saveProjectToc(projectId: string, tocJson: string): Promise<Project> {
   const data = await requestJson<{ project: Project }>(`/api/projects/${projectId}/toc`, {
     method: "PUT",
-    body: JSON.stringify({ toc_json: tocJson })
+    body: JSON.stringify({ toc_json: tocJson }),
   });
   return data.project;
 }
@@ -53,16 +54,20 @@ export async function saveProjectToc(projectId: string, tocJson: string): Promis
 export async function saveProjectOffset(projectId: string, pageOffset: number): Promise<Project> {
   const data = await requestJson<{ project: Project }>(`/api/projects/${projectId}/metadata`, {
     method: "PUT",
-    body: JSON.stringify({ page_offset: pageOffset })
+    body: JSON.stringify({ page_offset: pageOffset }),
   });
   return data.project;
 }
 
-export async function applyProject(projectId: string, tocJson: string, pageOffset: number): Promise<void> {
+export async function applyProject(
+  projectId: string,
+  tocJson: string,
+  pageOffset: number,
+): Promise<void> {
   const response = await fetch(`/api/projects/${projectId}/apply`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ toc_json: tocJson, page_offset: pageOffset })
+    body: JSON.stringify({ toc_json: tocJson, page_offset: pageOffset }),
   });
   if (!response.ok) {
     throw new Error(await parseError(response));
@@ -70,11 +75,19 @@ export async function applyProject(projectId: string, tocJson: string, pageOffse
   await response.blob();
 }
 
-export async function generateProjectToc(projectId: string, tocStart: number, tocEnd: number, providerId: string): Promise<GenerationJob> {
-  const data = await requestJson<{ job: GenerationJob }>(`/api/projects/${projectId}/generate-toc`, {
-    method: "POST",
-    body: JSON.stringify({ toc_start: tocStart, toc_end: tocEnd, provider_id: providerId })
-  });
+export async function generateProjectToc(
+  projectId: string,
+  tocStart: number,
+  tocEnd: number,
+  providerId: string,
+): Promise<GenerationJob> {
+  const data = await requestJson<{ job: GenerationJob }>(
+    `/api/projects/${projectId}/generate-toc`,
+    {
+      method: "POST",
+      body: JSON.stringify({ toc_start: tocStart, toc_end: tocEnd, provider_id: providerId }),
+    },
+  );
   return data.job;
 }
 
@@ -84,22 +97,51 @@ export async function listProjectTocFiles(projectId: string): Promise<TocFile[]>
 }
 
 export async function getProjectTocFile(projectId: string, tocFileId: string): Promise<string> {
-  const data = await requestJson<{ toc_json: string }>(`/api/projects/${projectId}/toc-files/${tocFileId}`);
+  const data = await requestJson<{ toc_json: string }>(
+    `/api/projects/${projectId}/toc-files/${tocFileId}`,
+  );
   return data.toc_json;
 }
 
-export async function saveProjectTocFile(projectId: string, tocFileId: string, tocJson: string): Promise<Project> {
-  const data = await requestJson<{ project: Project }>(`/api/projects/${projectId}/toc-files/${tocFileId}`, { method: "PUT", body: JSON.stringify({ toc_json: tocJson }) });
+export async function saveProjectTocFile(
+  projectId: string,
+  tocFileId: string,
+  tocJson: string,
+): Promise<Project> {
+  const data = await requestJson<{ project: Project }>(
+    `/api/projects/${projectId}/toc-files/${tocFileId}`,
+    { method: "PUT", body: JSON.stringify({ toc_json: tocJson }) },
+  );
   return data.project;
 }
 
-export async function applyProjectTocFile(projectId: string, tocFileId: string, pageOffset: number): Promise<void> {
-  const response = await fetch(`/api/projects/${projectId}/toc-files/${tocFileId}/apply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ page_offset: pageOffset }) });
+export async function applyProjectTocFile(
+  projectId: string,
+  tocFileId: string,
+  pageOffset: number,
+): Promise<void> {
+  const response = await fetch(`/api/projects/${projectId}/toc-files/${tocFileId}/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ page_offset: pageOffset }),
+  });
   if (!response.ok) throw new Error(await parseError(response));
 }
 
-export async function batchGenerateProjectTocs(requests: Array<{ projectId: string; tocStart: number; tocEnd: number; providerId: string }>): Promise<GenerationJob[]> {
-  const data = await requestJson<{ jobs: GenerationJob[] }>("/api/generation-jobs/batch", { method: "POST", body: JSON.stringify({ requests: requests.map((item) => ({ project_id: item.projectId, toc_start: item.tocStart, toc_end: item.tocEnd, provider_id: item.providerId })) }) });
+export async function batchGenerateProjectTocs(
+  requests: Array<{ projectId: string; tocStart: number; tocEnd: number; providerId: string }>,
+): Promise<GenerationJob[]> {
+  const data = await requestJson<{ jobs: GenerationJob[] }>("/api/generation-jobs/batch", {
+    method: "POST",
+    body: JSON.stringify({
+      requests: requests.map((item) => ({
+        project_id: item.projectId,
+        toc_start: item.tocStart,
+        toc_end: item.tocEnd,
+        provider_id: item.providerId,
+      })),
+    }),
+  });
   return data.jobs;
 }
 
@@ -109,11 +151,15 @@ export async function applyGenerationJob(jobId: string): Promise<void> {
 }
 
 export async function listProjectGenerationJobs(projectId: string): Promise<GenerationJob[]> {
-  const data = await requestJson<{ jobs: GenerationJob[] }>(`/api/projects/${projectId}/generation-jobs`);
+  const data = await requestJson<{ jobs: GenerationJob[] }>(
+    `/api/projects/${projectId}/generation-jobs`,
+  );
   return data.jobs;
 }
 
-export async function listGenerationJobs(status?: GenerationJob["status"]): Promise<GenerationJob[]> {
+export async function listGenerationJobs(
+  status?: GenerationJob["status"],
+): Promise<GenerationJob[]> {
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
   const data = await requestJson<{ jobs: GenerationJob[] }>(`/api/generation-jobs${query}`);
   return data.jobs;

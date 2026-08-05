@@ -27,7 +27,9 @@ type JsonLanguageDefaults = {
   }) => void;
 };
 
-(monaco.languages.json as unknown as { jsonDefaults: JsonLanguageDefaults }).jsonDefaults.setDiagnosticsOptions({
+(
+  monaco.languages.json as unknown as { jsonDefaults: JsonLanguageDefaults }
+).jsonDefaults.setDiagnosticsOptions({
   validate: true,
   allowComments: false,
   trailingCommas: "error",
@@ -48,34 +50,34 @@ type JsonLanguageDefaults = {
             properties: {
               title: {
                 type: "string",
-                minLength: 1
+                minLength: 1,
               },
               page: {
                 anyOf: [
                   {
                     type: "integer",
-                    minimum: 1
+                    minimum: 1,
                   },
                   {
-                    type: "null"
-                  }
-                ]
+                    type: "null",
+                  },
+                ],
               },
               attribute: {
                 type: "string",
                 enum: ["relative", "absolute"],
-                default: "relative"
+                default: "relative",
               },
               children: {
                 type: "array",
-                items: { $ref: "#/definitions/tocNode" }
-              }
-            }
-          }
-        }
-      }
-    }
-  ]
+                items: { $ref: "#/definitions/tocNode" },
+              },
+            },
+          },
+        },
+      },
+    },
+  ],
 });
 
 function createModel(value: string): monaco.editor.ITextModel {
@@ -95,6 +97,8 @@ export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
+  const initialValueRef = useRef(value);
+  const initialThemeRef = useRef(theme);
   const onChangeRef = useRef(onChange);
   const suppressChangeRef = useRef(false);
 
@@ -106,7 +110,7 @@ export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function
     openFind() {
       editorRef.current?.focus();
       editorRef.current?.getAction("actions.find")?.run();
-    }
+    },
   }));
 
   useEffect(() => {
@@ -114,13 +118,13 @@ export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function
       return;
     }
 
-    const model = createModel(value);
+    const model = createModel(initialValueRef.current);
     modelRef.current = model;
 
     const editor = monaco.editor.create(hostRef.current, {
       model,
       language: "json",
-      theme: theme === "dark" ? "vs-dark" : "vs",
+      theme: initialThemeRef.current === "dark" ? "vs-dark" : "vs",
       automaticLayout: true,
       minimap: { enabled: false },
       wordWrap: "on",
@@ -139,16 +143,16 @@ export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function
       bracketPairColorization: { enabled: true },
       guides: {
         bracketPairs: true,
-        indentation: true
+        indentation: true,
       },
       padding: {
         top: 12,
-        bottom: 12
+        bottom: 12,
       },
       scrollbar: {
         verticalScrollbarSize: 12,
-        horizontalScrollbarSize: 12
-      }
+        horizontalScrollbarSize: 12,
+      },
     });
     editorRef.current = editor;
 

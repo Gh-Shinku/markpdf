@@ -19,7 +19,7 @@ export function HomeRoute() {
       toast.success("Project created");
       navigate(`/projects/${encodeURIComponent(project.id)}`);
     },
-    onError: (error) => toast.error(error.message)
+    onError: (error) => toast.error(error.message),
   });
   const deleteMutation = useMutation({
     mutationFn: deleteProject,
@@ -27,7 +27,7 @@ export function HomeRoute() {
       await queryClient.invalidateQueries({ queryKey: projectKeys.all });
       toast.success("Project deleted");
     },
-    onError: (error) => toast.error(error.message)
+    onError: (error) => toast.error(error.message),
   });
 
   function importFile(file: File | null) {
@@ -53,7 +53,9 @@ export function HomeRoute() {
         onCreateProject={async (file) => importFile(file)}
         onCreateProjectInput={importFromInput}
         onOpenProject={(projectId) => navigate(`/projects/${encodeURIComponent(projectId)}`)}
-        onDeleteProject={(projectId) => setPendingDelete(projects.find((item) => item.id === projectId) ?? null)}
+        onDeleteProject={(projectId) =>
+          setPendingDelete(projects.find((item) => item.id === projectId) ?? null)
+        }
         onOpenTasks={() => navigate("/tasks")}
         onOpenSettings={() => navigate("/settings", { state: { from: "/" } })}
       />

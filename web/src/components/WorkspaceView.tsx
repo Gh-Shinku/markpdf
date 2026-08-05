@@ -2,17 +2,9 @@ import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
-  RefObject
+  RefObject,
 } from "react";
-import {
-  ArrowLeft,
-  BookMarked,
-  Download,
-  FileText,
-  Loader2,
-  Play,
-  Wand2
-} from "lucide-react";
+import { ArrowLeft, BookMarked, Download, FileText, Loader2, Play, Wand2 } from "lucide-react";
 import { AppNavigation } from "./AppNavigation";
 import { JsonEditor, type JsonEditorHandle } from "../JsonEditor";
 import { PreviewSettingsMenu } from "./PreviewSettingsMenu";
@@ -85,13 +77,18 @@ export function WorkspaceView({
   onSplitterPointerDown,
   onSplitterPointerMove,
   onSplitterPointerUp,
-  onSplitterPointerCancel
+  onSplitterPointerCancel,
 }: WorkspaceViewProps) {
   const pdfFrameSrc = project ? `/api/projects/${project.id}/pdf?v=${pdfVersion}` : "";
 
   return (
     <main className={`app-shell${isResizing ? " resizing" : ""}`}>
-      <AppNavigation active="workspace" onHome={onReturnHome} onTasks={onOpenTasks} onSettings={onOpenSettings} />
+      <AppNavigation
+        active="workspace"
+        onHome={onReturnHome}
+        onTasks={onOpenTasks}
+        onSettings={onOpenSettings}
+      />
       <header className="workspace-header">
         <button className="back-button" type="button" onClick={onReturnHome}>
           <ArrowLeft size={17} aria-hidden="true" />
@@ -122,7 +119,17 @@ export function WorkspaceView({
           <div className="toc-editor-workspace">
             <aside className="toc-file-explorer" aria-label="TOC files">
               <span>TOC files</span>
-              {tocFiles.map((file) => <button key={file.id} className={file.id === selectedTocFileId ? "active" : ""} type="button" onClick={() => onSelectTocFile(file.id)} title={file.name}>{file.name}</button>)}
+              {tocFiles.map((file) => (
+                <button
+                  key={file.id}
+                  className={file.id === selectedTocFileId ? "active" : ""}
+                  type="button"
+                  onClick={() => onSelectTocFile(file.id)}
+                  title={file.name}
+                >
+                  {file.name}
+                </button>
+              ))}
             </aside>
             <JsonEditor ref={editorRef} value={tocText} theme={theme} onChange={onEditorChange} />
           </div>
@@ -149,7 +156,7 @@ export function WorkspaceView({
             {project ? (
               <PdfViewer
                 source={pdfFrameSrc}
-                toolbarStart={(
+                toolbarStart={
                   <div className="pdf-meta-leading">
                     <div className={previewStyles.actionGroup}>
                       <button
@@ -161,7 +168,10 @@ export function WorkspaceView({
                         {isPreviewing ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
                         Preview
                       </button>
-                      <PreviewSettingsMenu pageOffset={pageOffset} onPageOffsetChange={onPageOffsetChange} />
+                      <PreviewSettingsMenu
+                        pageOffset={pageOffset}
+                        onPageOffsetChange={onPageOffsetChange}
+                      />
                     </div>
                     {project ? (
                       <a
@@ -175,7 +185,7 @@ export function WorkspaceView({
                       </a>
                     ) : null}
                   </div>
-                )}
+                }
               />
             ) : (
               <div className="empty-preview">

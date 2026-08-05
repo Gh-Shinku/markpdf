@@ -20,7 +20,7 @@ export function HomeView({
   onOpenProject,
   onDeleteProject,
   onOpenTasks,
-  onOpenSettings
+  onOpenSettings,
 }: HomeViewProps) {
   const [isDragging, setIsDragging] = useState(false);
   const sortedProjects = useMemo(
@@ -61,18 +61,28 @@ export function HomeView({
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
         >
-          <div className="import-zone-icon"><Upload size={20} aria-hidden="true" /></div>
+          <div className="import-zone-icon">
+            <Upload size={20} aria-hidden="true" />
+          </div>
           <div>
             <h2>Create a project</h2>
             <p>Drop a PDF here, or choose one from your computer.</p>
           </div>
-          <input id="project-import" className="import-file-input" type="file" accept="application/pdf,.pdf" onChange={onCreateProjectInput} />
+          <input
+            id="project-import"
+            className="import-file-input"
+            type="file"
+            accept="application/pdf,.pdf"
+            onChange={onCreateProjectInput}
+          />
         </label>
 
         <section className="library-section" aria-labelledby="recent-projects">
           <div className="section-heading">
             <div>
-              <p className="section-kicker"><Clock3 size={14} aria-hidden="true" /> Recent</p>
+              <p className="section-kicker">
+                <Clock3 size={14} aria-hidden="true" /> Recent
+              </p>
               <h2 id="recent-projects">Continue where you left off</h2>
             </div>
             <span className="item-count">{projects.length} projects</span>
@@ -80,7 +90,12 @@ export function HomeView({
           {recentProjects.length ? (
             <div className="project-list recent-project-list">
               {recentProjects.map((project) => (
-                <ProjectRow key={project.id} project={project} onOpen={onOpenProject} onDelete={onDeleteProject} />
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  onOpen={onOpenProject}
+                  onDelete={onDeleteProject}
+                />
               ))}
             </div>
           ) : (
@@ -92,13 +107,20 @@ export function HomeView({
           <section className="library-section all-projects" aria-labelledby="all-projects">
             <div className="section-heading">
               <div>
-                <p className="section-kicker"><FolderOpen size={14} aria-hidden="true" /> Library</p>
+                <p className="section-kicker">
+                  <FolderOpen size={14} aria-hidden="true" /> Library
+                </p>
                 <h2 id="all-projects">All projects</h2>
               </div>
             </div>
             <div className="project-list">
               {sortedProjects.slice(5).map((project) => (
-                <ProjectRow key={project.id} project={project} onOpen={onOpenProject} onDelete={onDeleteProject} />
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  onOpen={onOpenProject}
+                  onDelete={onDeleteProject}
+                />
               ))}
             </div>
           </section>
@@ -108,22 +130,42 @@ export function HomeView({
   );
 }
 
-function ProjectRow({ project, onOpen, onDelete }: { project: Project; onOpen: (id: string) => void; onDelete: (id: string) => void }) {
+function ProjectRow({
+  project,
+  onOpen,
+  onDelete,
+}: {
+  project: Project;
+  onOpen: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
   const validation = project.last_validation?.valid
     ? `${project.last_validation.bookmark_count} bookmarks`
-    : project.last_validation ? "Needs review" : "Not previewed";
+    : project.last_validation
+      ? "Needs review"
+      : "Not previewed";
   return (
     <article className="project-row">
       <button className="project-open" type="button" onClick={() => onOpen(project.id)}>
-        <span className="project-file-icon"><FileText size={18} aria-hidden="true" /></span>
+        <span className="project-file-icon">
+          <FileText size={18} aria-hidden="true" />
+        </span>
         <span className="project-name">
           <strong>{project.name}</strong>
           <small>{project.pdf_filename}</small>
         </span>
         <span className="project-meta">{project.page_count} pages</span>
-        <span className={`project-status${project.last_validation?.valid ? " success" : ""}`}>{validation}</span>
+        <span className={`project-status${project.last_validation?.valid ? " success" : ""}`}>
+          {validation}
+        </span>
       </button>
-      <button className="icon-button danger-icon" type="button" aria-label={`Delete ${project.name}`} title="Delete project" onClick={() => onDelete(project.id)}>
+      <button
+        className="icon-button danger-icon"
+        type="button"
+        aria-label={`Delete ${project.name}`}
+        title="Delete project"
+        onClick={() => onDelete(project.id)}
+      >
         <Trash2 size={16} aria-hidden="true" />
       </button>
     </article>

@@ -13,7 +13,7 @@ export async function parseError(response: Response): Promise<string> {
 export async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    ...init
+    ...init,
   });
   if (!response.ok) {
     throw new Error(await parseError(response));

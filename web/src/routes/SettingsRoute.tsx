@@ -8,13 +8,67 @@ import { getProviders, saveProviders, settingsKey, testProvider } from "../featu
 import type { VlmProviderDraft } from "../types";
 
 export function SettingsRoute() {
-  const navigate = useNavigate(); const location = useLocation(); const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
   const { preference, setPreference } = useThemePreference();
   const providersQuery = useQuery({ queryKey: settingsKey, queryFn: getProviders });
   const [drafts, setDrafts] = useState<VlmProviderDraft[]>([]);
-  useEffect(() => { if (providersQuery.data) setDrafts(providersQuery.data.map((item) => ({ id: item.id, name: item.name, baseUrl: item.base_url, model: item.model, apiKey: "" }))); }, [providersQuery.data]);
-  const saveMutation = useMutation({ mutationFn: saveProviders, onSuccess: (providers) => { queryClient.setQueryData(settingsKey, providers); setDrafts(providers.map((item) => ({ id: item.id, name: item.name, baseUrl: item.base_url, model: item.model, apiKey: "" }))); toast.success("VLM APIs saved"); }, onError: (error) => toast.error(error.message) });
-  const testMutation = useMutation({ mutationFn: testProvider, onSuccess: (provider) => { queryClient.setQueryData(settingsKey, (current: typeof providersQuery.data) => current?.map((item) => item.id === provider.id ? provider : item)); toast[provider.verification_status === "verified" ? "success" : "error"](provider.verification_message); }, onError: (error) => toast.error(error.message) });
+  useEffect(() => {
+    if (providersQuery.data)
+      setDrafts(
+        providersQuery.data.map((item) => ({
+          id: item.id,
+          name: item.name,
+          baseUrl: item.base_url,
+          model: item.model,
+          apiKey: "",
+        })),
+      );
+  }, [providersQuery.data]);
+  const saveMutation = useMutation({
+    mutationFn: saveProviders,
+    onSuccess: (providers) => {
+      queryClient.setQueryData(settingsKey, providers);
+      setDrafts(
+        providers.map((item) => ({
+          id: item.id,
+          name: item.name,
+          baseUrl: item.base_url,
+          model: item.model,
+          apiKey: "",
+        })),
+      );
+      toast.success("VLM APIs saved");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const testMutation = useMutation({
+    mutationFn: testProvider,
+    onSuccess: (provider) => {
+      queryClient.setQueryData(settingsKey, (current: typeof providersQuery.data) =>
+        current?.map((item) => (item.id === provider.id ? provider : item)),
+      );
+      toast[provider.verification_status === "verified" ? "success" : "error"](
+        provider.verification_message,
+      );
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const from = (location.state as { from?: string } | null)?.from;
-  return <SettingsView providers={providersQuery.data ?? []} drafts={drafts} themePreference={preference} testingProviderId={testMutation.isPending ? testMutation.variables : null} onProvidersChange={setDrafts} onThemePreferenceChange={setPreference} onBack={() => navigate(from && from !== "/settings" ? from : "/")} onOpenHome={() => navigate("/")} onOpenTasks={() => navigate("/tasks")} onSave={() => saveMutation.mutate(drafts)} onTest={(id) => testMutation.mutate(id)} />;
+  return (
+    <SettingsView
+      providers={providersQuery.data ?? []}
+      drafts={drafts}
+      themePreference={preference}
+      testingProviderId={testMutation.isPending ? testMutation.variables : null}
+      onProvidersChange={setDrafts}
+      onThemePreferenceChange={setPreference}
+      onBack={() => navigate(from && from !== "/settings" ? from : "/")}
+      onOpenHome={() => navigate("/")}
+      onOpenTasks={() => navigate("/tasks")}
+      onSave={() => saveMutation.mutate(drafts)}
+      onTest={(id) => testMutation.mutate(id)}
+    />
+  );
 }
