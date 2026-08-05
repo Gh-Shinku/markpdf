@@ -55,6 +55,7 @@ export function WorkspaceRoute() {
   const tocSaveSequenceRef = useRef(0);
   const offsetSaveSequenceRef = useRef(0);
   const handledJobsRef = useRef(new Set<string>());
+  const handledJobsProjectRef = useRef("");
   const projectQuery = useQuery({
     queryKey: projectKeys.detail(projectId),
     queryFn: () => getProject(projectId),
@@ -156,6 +157,12 @@ export function WorkspaceRoute() {
     return () => window.removeEventListener("keydown", openFind, true);
   }, []);
   useEffect(() => {
+    if (!projectId || !generationJobsQuery.isSuccess) return;
+    if (handledJobsProjectRef.current !== projectId) {
+      handledJobsProjectRef.current = projectId;
+      handledJobsRef.current = new Set(generationJobs.map((job) => `${job.id}:${job.updated_at}`));
+      return;
+    }
     generationJobs
       .filter((job) => job.status === "succeeded" || job.status === "failed")
       .forEach((job) => {
@@ -166,7 +173,7 @@ export function WorkspaceRoute() {
         void queryClient.invalidateQueries({ queryKey: projectKeys.allGenerationJobs });
         if (job.status === "succeeded") toast.success(job.message);
       });
-  }, [generationJobs, projectId, queryClient]);
+  }, [generationJobs, generationJobsQuery.isSuccess, projectId, queryClient]);
 
   async function flushAutosave() {
     const offset = Number.parseInt(pageOffset, 10);

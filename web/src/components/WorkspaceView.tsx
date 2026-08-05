@@ -4,7 +4,17 @@ import type {
   PointerEvent as ReactPointerEvent,
   RefObject,
 } from "react";
-import { ArrowLeft, BookMarked, Download, FileText, Loader2, Play, Wand2 } from "lucide-react";
+import { useState } from "react";
+import {
+  ArrowLeft,
+  BookMarked,
+  Download,
+  FileText,
+  Files,
+  Loader2,
+  Play,
+  Wand2,
+} from "lucide-react";
 import { AppNavigation } from "./AppNavigation";
 import { JsonEditor, type JsonEditorHandle } from "../JsonEditor";
 import { PreviewSettingsMenu } from "./PreviewSettingsMenu";
@@ -80,6 +90,7 @@ export function WorkspaceView({
   onSplitterPointerCancel,
 }: WorkspaceViewProps) {
   const pdfFrameSrc = project ? `/api/projects/${project.id}/pdf?v=${pdfVersion}` : "";
+  const [isFileExplorerOpen, setFileExplorerOpen] = useState(false);
 
   return (
     <main className={`app-shell${isResizing ? " resizing" : ""}`}>
@@ -103,8 +114,19 @@ export function WorkspaceView({
       <section className="workspace-grid" ref={workspaceRef} style={workspaceStyle}>
         <section className="editor-pane">
           <div className="pane-header">
-            <div>
-              <h2>TOC JSON</h2>
+            <div className="pane-title-row">
+              <button
+                className={`file-explorer-toggle${isFileExplorerOpen ? " open" : ""}`}
+                type="button"
+                aria-label={isFileExplorerOpen ? "Hide TOC files" : "Show TOC files"}
+                aria-controls="toc-file-explorer"
+                aria-expanded={isFileExplorerOpen}
+                title={isFileExplorerOpen ? "Hide TOC files" : "Show TOC files"}
+                onClick={() => setFileExplorerOpen((value) => !value)}
+              >
+                <Files size={16} aria-hidden="true" />
+              </button>
+              <h2>TOC Editor</h2>
             </div>
             <button
               className="secondary-action"
@@ -116,9 +138,15 @@ export function WorkspaceView({
               AI Generate
             </button>
           </div>
-          <div className="toc-editor-workspace">
-            <aside className="toc-file-explorer" aria-label="TOC files">
-              <span>TOC files</span>
+          <div className={`toc-editor-workspace${isFileExplorerOpen ? " explorer-open" : ""}`}>
+            <aside
+              className="toc-file-explorer"
+              id="toc-file-explorer"
+              aria-label="TOC files"
+              hidden={!isFileExplorerOpen}
+            >
+              <div className="toc-file-explorer-header">Explorer</div>
+              <div className="toc-file-explorer-section">TOC files</div>
               {tocFiles.map((file) => (
                 <button
                   key={file.id}
