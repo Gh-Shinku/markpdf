@@ -1,0 +1,94 @@
+.primary-action,
+.secondary-action,
+.danger-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.primary-action {
+  border-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+}
+
+.primary-action:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.danger-action {
+  border-color: #a6333f;
+  color: #fff;
+  background: #a6333f;
+}
+
+.danger-action:hover:not(:disabled) {
+  background: #8a2634;
+}
+
+.primary-action:disabled,
+.secondary-action:disabled,
+.danger-action:disabled {
+  cursor: not-allowed;
+  color: var(--text-secondary);
+  border-color: var(--line);
+  background: var(--surface-subtle);
+}
+
+.secondary-action:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.icon-only {
+  width: 30px;
+  padding: 5px;
+}
+
+.icon-button,
+.back-button {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.back-button:hover,
+.icon-button:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.icon-button {
+  width: 32px;
+  height: 32px;
+  margin-right: 9px;
+  border-radius: 5px;
+}
+
+.danger-icon:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.back-button {
+  grid-auto-flow: column;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+}
