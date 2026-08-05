@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ChevronLeft,
   ChevronRight,
@@ -20,6 +21,9 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 type PdfViewerProps = {
   source: string;
+  toolbarStart?: ReactNode;
+  toolbarControlsExtra?: ReactNode;
+  toolbarEnd?: ReactNode;
 };
 
 type LoadState =
@@ -44,6 +48,14 @@ type PdfOutlineItem = {
 const MIN_SCALE = 0.4;
 const MAX_SCALE = 3;
 const SCALE_STEP = 0.2;
+const PAGE_GAP = 14;
+const PAGE_VERTICAL_PADDING = 18;
+const PAGE_HORIZONTAL_PADDING = 18;
+const THUMBNAIL_WIDTH = 92;
+const THUMBNAIL_ROW_GAP = 7;
+const THUMBNAIL_ROW_CHROME = 38;
+const MAIN_MAX_PIXEL_RATIO = 2;
+const THUMBNAIL_PIXEL_RATIO = 1;
 const PDFJS_RESOURCE_BASE = "/pdfjs";
 const FALLBACK_PAGE_SIZE: PageSize = { width: 612, height: 792 };
 
@@ -51,10 +63,14 @@ function clampScale(value: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
 }
 
-export function PdfViewer({ source }: PdfViewerProps) {
+export function PdfViewer({
+  source,
+  toolbarStart,
+  toolbarControlsExtra,
+  toolbarEnd
+}: PdfViewerProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const sidebarBodyRef = useRef<HTMLDivElement | null>(null);
-  const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const scrollFrameRef = useRef<number | null>(null);
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [pageSizes, setPageSizes] = useState<PageSize[]>([]);
@@ -65,7 +81,35 @@ export function PdfViewer({ source }: PdfViewerProps) {
   const [fitMode, setFitMode] = useState(true);
   const [stageWidth, setStageWidth] = useState(0);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("thumbnails");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>({ kind: "idle" });
+
+  const pageCount = pdfDocument?.numPages ?? 0;
+  const isReady = Boolean(pdfDocument);
+
+  const pageVirtualizer = useVirtualizer({
+    count: pageCount,
+    getScrollElement: () => stageRef.current,
+    estimateSize: (index) => getPageCssHeight(pageSizes[index], scale) + PAGE_GAP,
+    overscan: 3,
+    paddingStart: PAGE_VERTICAL_PADDING,
+    paddingEnd: PAGE_VERTICAL_PADDING,
+  });
+
+  const thumbnailVirtualizer = useVirtualizer({
+    count: pageCount,
+    enabled: isSidebarOpen && sidebarTab === "thumbnails",
+    getScrollElement: () => sidebarBodyRef.current,
+    estimateSize: (index) => getThumbnailRowHeight(pageSizes[index]) + THUMBNAIL_ROW_GAP,
+    overscan: 6,
+  });
+
+  const virtualPages = pageVirtualizer.getVirtualItems();
+  const virtualThumbnails = thumbnailVirtualizer.getVirtualItems();
+  const pageListWidth = Math.max(
+    stageWidth,
+    Math.floor(getMaxPageWidth(pageSizes) * scale) + PAGE_HORIZONTAL_PADDING * 2,
+  );
 
   useEffect(() => {
     const host = stageRef.current;
@@ -91,6 +135,7 @@ export function PdfViewer({ source }: PdfViewerProps) {
     }
 
     let cancelled = false;
+    let loadedDocument: PDFDocumentProxy | null = null;
     setLoadState({ kind: "loading", message: "Loading PDF" });
     setPdfDocument(null);
     setPageSizes([]);
@@ -109,6 +154,7 @@ export function PdfViewer({ source }: PdfViewerProps) {
 
     loadingTask.promise
       .then(async (pdf) => {
+        loadedDocument = pdf;
         if (cancelled) {
           pageCleanupDocument(pdf);
           return;
@@ -123,7 +169,6 @@ export function PdfViewer({ source }: PdfViewerProps) {
         ]);
 
         if (cancelled) {
-          pageCleanupDocument(pdf);
           return;
         }
 
@@ -143,6 +188,9 @@ export function PdfViewer({ source }: PdfViewerProps) {
 
     return () => {
       cancelled = true;
+      if (loadedDocument) {
+        pageCleanupDocument(loadedDocument);
+      }
       void loadingTask.destroy();
     };
   }, [source]);
@@ -157,9 +205,17 @@ export function PdfViewer({ source }: PdfViewerProps) {
     }
 
     const firstPageWidth = pageSizes[0]?.width ?? FALLBACK_PAGE_SIZE.width;
-    const availableWidth = Math.max(240, stageWidth - 40);
+    const availableWidth = Math.max(240, stageWidth - PAGE_HORIZONTAL_PADDING * 2);
     setScale(clampScale(availableWidth / firstPageWidth));
   }, [fitMode, pageSizes, stageWidth]);
+
+  useEffect(() => {
+    pageVirtualizer.measure();
+  }, [pageVirtualizer, pageSizes, scale]);
+
+  useEffect(() => {
+    thumbnailVirtualizer.measure();
+  }, [thumbnailVirtualizer, pageSizes, isSidebarOpen, sidebarTab]);
 
   useEffect(() => {
     return () => {
@@ -169,17 +225,12 @@ export function PdfViewer({ source }: PdfViewerProps) {
     };
   }, []);
 
-  function setPageNode(page: number, node: HTMLDivElement | null) {
-    pageRefs.current[page - 1] = node;
-  }
-
   function scrollToPage(nextPage: number) {
-    const pageCount = pdfDocument?.numPages ?? 0;
     if (!pageCount) {
       return;
     }
     const clampedPage = Math.min(pageCount, Math.max(1, nextPage));
-    pageRefs.current[clampedPage - 1]?.scrollIntoView({ block: "start", behavior: "smooth" });
+    pageVirtualizer.scrollToIndex(clampedPage - 1, { align: "start", behavior: "smooth" });
     setPageNumber(clampedPage);
   }
 
@@ -195,30 +246,20 @@ export function PdfViewer({ source }: PdfViewerProps) {
         return;
       }
 
-      const stageRect = stage.getBoundingClientRect();
-      const anchor = stageRect.top + 18;
+      const anchor = stage.scrollTop + PAGE_VERTICAL_PADDING;
+      const visiblePages = pageVirtualizer.getVirtualItems();
       let bestPage = pageNumber;
       let bestDistance = Number.POSITIVE_INFINITY;
 
-      for (let index = 0; index < pageRefs.current.length; index += 1) {
-        const node = pageRefs.current[index];
-        if (!node) {
-          continue;
-        }
-        const rect = node.getBoundingClientRect();
-        if (rect.bottom < stageRect.top || rect.top > stageRect.bottom) {
-          continue;
-        }
-        const distance = Math.abs(rect.top - anchor);
+      for (const item of visiblePages) {
+        const distance = Math.abs(item.start - anchor);
         if (distance < bestDistance) {
           bestDistance = distance;
-          bestPage = index + 1;
+          bestPage = item.index + 1;
         }
       }
 
-      if (bestPage !== pageNumber) {
-        setPageNumber(bestPage);
-      }
+      setPageNumber((current) => (bestPage === current ? current : bestPage));
     });
   }
 
@@ -237,6 +278,11 @@ export function PdfViewer({ source }: PdfViewerProps) {
       return;
     }
     scrollToPage(nextPageValue);
+  }
+
+  function toggleSidebar() {
+    setIsSidebarOpen((value) => !value);
+    setFitMode(true);
   }
 
   function zoomOut() {
@@ -268,101 +314,122 @@ export function PdfViewer({ source }: PdfViewerProps) {
     }
   }
 
-  const pageCount = pdfDocument?.numPages ?? 0;
-  const isReady = Boolean(pdfDocument);
-  const pages = useMemo(() => Array.from({ length: pageCount }, (_, index) => index + 1), [pageCount]);
-
   return (
-    <div className="pdf-viewer">
-      <aside className="pdf-sidebar" aria-label="PDF sidebar">
-        <div className="pdf-sidebar-tabs" role="tablist" aria-label="PDF sidebar sections">
-          <button
-            className={`pdf-sidebar-tab${sidebarTab === "thumbnails" ? " active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={sidebarTab === "thumbnails"}
-            onClick={() => setSidebarTab("thumbnails")}
-          >
-            <Image size={15} />
-            Pages
-          </button>
-          <button
-            className={`pdf-sidebar-tab${sidebarTab === "outline" ? " active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={sidebarTab === "outline"}
-            onClick={() => setSidebarTab("outline")}
-          >
-            <ListTree size={15} />
-            Outline
-          </button>
-        </div>
+    <div className={`pdf-viewer${isSidebarOpen ? "" : " sidebar-collapsed"}`}>
+      <button
+        className="pdf-sidebar-toggle"
+        type="button"
+        aria-label={isSidebarOpen ? "Hide PDF sidebar" : "Show PDF sidebar"}
+        onClick={toggleSidebar}
+      >
+        <span className="pdf-sidebar-toggle-surface">
+          {isSidebarOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+        </span>
+      </button>
 
-        <div className="pdf-sidebar-body" ref={sidebarBodyRef}>
-          {sidebarTab === "thumbnails" ? (
-            <div className="pdf-thumbnail-list">
-              {pages.map((page) => (
-                <button
-                  className={`pdf-thumbnail-row${page === pageNumber ? " active" : ""}`}
-                  key={page}
-                  type="button"
-                  onClick={() => scrollToPage(page)}
-                >
-                  {pdfDocument ? (
-                    <ThumbnailCanvas
-                      document={pdfDocument}
-                      pageNumber={page}
-                      rootRef={sidebarBodyRef}
-                      size={pageSizes[page - 1] ?? pageSizes[0] ?? FALLBACK_PAGE_SIZE}
-                    />
-                  ) : null}
-                  <span>{page}</span>
-                </button>
-              ))}
+      <aside className={`pdf-sidebar${isSidebarOpen ? "" : " collapsed"}`} aria-label="PDF sidebar">
+        {isSidebarOpen ? (
+          <>
+            <div className="pdf-sidebar-tabs" role="tablist" aria-label="PDF sidebar sections">
+              <button
+                className={`pdf-sidebar-tab${sidebarTab === "thumbnails" ? " active" : ""}`}
+                type="button"
+                role="tab"
+                aria-selected={sidebarTab === "thumbnails"}
+                onClick={() => setSidebarTab("thumbnails")}
+              >
+                <Image size={15} />
+                Pages
+              </button>
+              <button
+                className={`pdf-sidebar-tab${sidebarTab === "outline" ? " active" : ""}`}
+                type="button"
+                role="tab"
+                aria-selected={sidebarTab === "outline"}
+                onClick={() => setSidebarTab("outline")}
+              >
+                <ListTree size={15} />
+                Outline
+              </button>
             </div>
-          ) : (
-            <OutlineTree items={outline} level={0} onSelect={jumpToOutlineItem} />
-          )}
-        </div>
+
+            <div className="pdf-sidebar-body" ref={sidebarBodyRef}>
+              {sidebarTab === "thumbnails" ? (
+                <div className="pdf-thumbnail-list" style={{ height: thumbnailVirtualizer.getTotalSize() }}>
+                  {virtualThumbnails.map((item) => {
+                    const page = item.index + 1;
+                    return (
+                      <button
+                        className={`pdf-thumbnail-row${page === pageNumber ? " active" : ""}`}
+                        data-index={item.index}
+                        key={item.key}
+                        ref={thumbnailVirtualizer.measureElement}
+                        style={{ transform: `translateY(${item.start}px)` }}
+                        type="button"
+                        onClick={() => scrollToPage(page)}
+                      >
+                        {pdfDocument ? (
+                          <ThumbnailCanvas
+                            document={pdfDocument}
+                            pageNumber={page}
+                            size={pageSizes[item.index] ?? pageSizes[0] ?? FALLBACK_PAGE_SIZE}
+                          />
+                        ) : null}
+                        <span>{page}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <OutlineTree items={outline} level={0} onSelect={jumpToOutlineItem} />
+              )}
+            </div>
+          </>
+        ) : null}
       </aside>
 
       <section className="pdf-main" aria-label="PDF document">
-        <div className="pdf-viewer-toolbar">
-          <button className="secondary-action icon-only" type="button" disabled={!isReady || pageNumber <= 1} onClick={previousPage}>
-            <ChevronLeft size={16} />
-          </button>
-          <label className="pdf-page-control">
-            <input
-              value={pageInput}
-              disabled={!isReady}
-              onBlur={commitPageInput}
-              onChange={(event) => setPageInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  commitPageInput();
-                }
-              }}
-            />
-            <span>/ {pageCount || "-"}</span>
-          </label>
-          <button className="secondary-action icon-only" type="button" disabled={!isReady || pageNumber >= pageCount} onClick={nextPage}>
-            <ChevronRight size={16} />
-          </button>
-          <span className="pdf-toolbar-separator" />
-          <button className="secondary-action icon-only" type="button" disabled={!isReady} onClick={zoomOut}>
-            <Minus size={16} />
-          </button>
-          <span className="pdf-zoom-label">{Math.round(scale * 100)}%</span>
-          <button className="secondary-action icon-only" type="button" disabled={!isReady} onClick={zoomIn}>
-            <Plus size={16} />
-          </button>
-          <button className="secondary-action icon-only" type="button" disabled={!isReady} onClick={resetZoom}>
-            <RotateCcw size={16} />
-          </button>
-          <button className="secondary-action" type="button" disabled={!isReady} onClick={fitWidth}>
-            <Maximize2 size={16} />
-            Fit
-          </button>
+        <div className={`pdf-viewer-toolbar${toolbarStart || toolbarEnd ? " with-meta" : ""}`}>
+          {toolbarStart ? <div className="pdf-toolbar-leading">{toolbarStart}</div> : null}
+          <div className="pdf-toolbar-controls">
+            {toolbarControlsExtra}
+            <button className="secondary-action icon-only" type="button" disabled={!isReady || pageNumber <= 1} onClick={previousPage}>
+              <ChevronLeft size={16} />
+            </button>
+            <label className="pdf-page-control">
+              <input
+                value={pageInput}
+                disabled={!isReady}
+                onBlur={commitPageInput}
+                onChange={(event) => setPageInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    commitPageInput();
+                  }
+                }}
+              />
+              <span>/ {pageCount || "-"}</span>
+            </label>
+            <button className="secondary-action icon-only" type="button" disabled={!isReady || pageNumber >= pageCount} onClick={nextPage}>
+              <ChevronRight size={16} />
+            </button>
+            <span className="pdf-toolbar-separator" />
+            <button className="secondary-action icon-only" type="button" disabled={!isReady} onClick={zoomOut}>
+              <Minus size={16} />
+            </button>
+            <span className="pdf-zoom-label">{Math.round(scale * 100)}%</span>
+            <button className="secondary-action icon-only" type="button" disabled={!isReady} onClick={zoomIn}>
+              <Plus size={16} />
+            </button>
+            <button className="secondary-action icon-only" type="button" disabled={!isReady} onClick={resetZoom}>
+              <RotateCcw size={16} />
+            </button>
+            <button className="secondary-action" type="button" disabled={!isReady} onClick={fitWidth}>
+              <Maximize2 size={16} />
+              Fit
+            </button>
+          </div>
+          {toolbarEnd ? <div className="pdf-toolbar-trailing">{toolbarEnd}</div> : null}
         </div>
 
         <div className="pdf-viewer-stage" ref={stageRef} onScroll={updateCurrentPageFromScroll}>
@@ -375,19 +442,34 @@ export function PdfViewer({ source }: PdfViewerProps) {
           {loadState.kind === "loading" ? (
             <div className="pdf-viewer-message">{loadState.message}</div>
           ) : null}
-          <div className="pdf-page-list">
-            {pages.map((page) => (
-              <PdfPageCanvas
-                document={pdfDocument}
-                isCurrent={page === pageNumber}
-                key={page}
-                onPageNode={setPageNode}
-                pageNumber={page}
-                rootRef={stageRef}
-                scale={scale}
-                size={pageSizes[page - 1] ?? pageSizes[0] ?? FALLBACK_PAGE_SIZE}
-              />
-            ))}
+          <div
+            className="pdf-page-list"
+            style={{ height: pageVirtualizer.getTotalSize(), width: pageListWidth }}
+          >
+            {virtualPages.map((item) => {
+              const page = item.index + 1;
+              const size = pageSizes[item.index] ?? pageSizes[0] ?? FALLBACK_PAGE_SIZE;
+              const cssWidth = getPageCssWidth(size, scale);
+              const cssHeight = getPageCssHeight(size, scale);
+              return (
+                <div
+                  className="pdf-page-virtual-row"
+                  data-index={item.index}
+                  key={item.key}
+                  ref={pageVirtualizer.measureElement}
+                  style={{ height: item.size, transform: `translateY(${item.start}px)` }}
+                >
+                  <PdfPageCanvas
+                    document={pdfDocument}
+                    isCurrent={page === pageNumber}
+                    pageNumber={page}
+                    scale={scale}
+                    width={cssWidth}
+                    height={cssHeight}
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -398,53 +480,34 @@ export function PdfViewer({ source }: PdfViewerProps) {
 type PdfPageCanvasProps = {
   document: PDFDocumentProxy | null;
   isCurrent: boolean;
-  onPageNode: (pageNumber: number, node: HTMLDivElement | null) => void;
   pageNumber: number;
-  rootRef: RefObject<HTMLDivElement | null>;
   scale: number;
-  size: PageSize;
+  width: number;
+  height: number;
 };
 
 function PdfPageCanvas({
   document,
   isCurrent,
-  onPageNode,
   pageNumber,
-  rootRef,
   scale,
-  size
+  width,
+  height
 }: PdfPageCanvasProps) {
-  const shellRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);
-  const [isNearViewport, setIsNearViewport] = useState(false);
-  const cssWidth = Math.floor(size.width * scale);
-  const cssHeight = Math.floor(size.height * scale);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    const node = shellRef.current;
-    if (!root || !node) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => setIsNearViewport(Boolean(entry?.isIntersecting)),
-      { root, rootMargin: "900px 0px" },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [rootRef]);
 
   useEffect(() => {
     return () => {
       renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
+      releaseCanvas(canvasRef.current);
     };
   }, []);
 
   useEffect(() => {
-    if (!document || !isNearViewport || !canvasRef.current) {
+    if (!document || !canvasRef.current) {
+      releaseCanvas(canvasRef.current);
       return;
     }
 
@@ -456,6 +519,7 @@ function PdfPageCanvas({
     }
 
     renderTaskRef.current?.cancel();
+    releaseCanvas(canvas);
     document
       .getPage(pageNumber)
       .then((page) => {
@@ -463,12 +527,7 @@ function PdfPageCanvas({
           page.cleanup();
           return undefined;
         }
-        return renderPageToCanvas(page, canvas, context, scale);
-      })
-      .then((task) => {
-        if (!task) {
-          return;
-        }
+        const task = renderPageToCanvas(page, canvas, context, scale, MAIN_MAX_PIXEL_RATIO);
         renderTaskRef.current = task;
         return task.promise.finally(() => {
           if (renderTaskRef.current === task) {
@@ -486,25 +545,21 @@ function PdfPageCanvas({
       cancelled = true;
       renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
+      releaseCanvas(canvas);
     };
-  }, [document, isNearViewport, pageNumber, scale]);
+  }, [document, pageNumber, scale]);
 
   return (
     <div
       className={`pdf-page-shell${isCurrent ? " current" : ""}`}
-      ref={(node) => {
-        shellRef.current = node;
-        onPageNode(pageNumber, node);
-      }}
-      style={{ width: cssWidth, height: cssHeight }}
+      style={{ width, height }}
     >
       <canvas
         aria-label={`Page ${pageNumber}`}
         className="pdf-page-canvas"
         ref={canvasRef}
-        style={{ width: cssWidth, height: cssHeight }}
+        style={{ width, height }}
       />
-      {!isNearViewport ? <div className="pdf-page-placeholder">Page {pageNumber}</div> : null}
     </div>
   );
 }
@@ -512,36 +567,25 @@ function PdfPageCanvas({
 type ThumbnailCanvasProps = {
   document: PDFDocumentProxy;
   pageNumber: number;
-  rootRef: RefObject<HTMLDivElement | null>;
   size: PageSize;
 };
 
-function ThumbnailCanvas({ document, pageNumber, rootRef, size }: ThumbnailCanvasProps) {
+function ThumbnailCanvas({ document, pageNumber, size }: ThumbnailCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rowRef = useRef<HTMLDivElement | null>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);
-  const [isNearViewport, setIsNearViewport] = useState(false);
-  const thumbWidth = 92;
-  const thumbScale = thumbWidth / size.width;
-  const thumbHeight = Math.floor(size.height * thumbScale);
+  const thumbScale = THUMBNAIL_WIDTH / size.width;
+  const thumbHeight = getThumbnailHeight(size);
 
   useEffect(() => {
-    const root = rootRef.current;
-    const node = rowRef.current;
-    if (!root || !node) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => setIsNearViewport(Boolean(entry?.isIntersecting)),
-      { root, rootMargin: "500px 0px" },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [rootRef]);
+    return () => {
+      renderTaskRef.current?.cancel();
+      renderTaskRef.current = null;
+      releaseCanvas(canvasRef.current);
+    };
+  }, []);
 
   useEffect(() => {
-    if (!isNearViewport || !canvasRef.current) {
+    if (!canvasRef.current) {
       return;
     }
 
@@ -553,6 +597,7 @@ function ThumbnailCanvas({ document, pageNumber, rootRef, size }: ThumbnailCanva
     }
 
     renderTaskRef.current?.cancel();
+    releaseCanvas(canvas);
     document
       .getPage(pageNumber)
       .then((page) => {
@@ -560,12 +605,7 @@ function ThumbnailCanvas({ document, pageNumber, rootRef, size }: ThumbnailCanva
           page.cleanup();
           return undefined;
         }
-        return renderPageToCanvas(page, canvas, context, thumbScale);
-      })
-      .then((task) => {
-        if (!task) {
-          return;
-        }
+        const task = renderPageToCanvas(page, canvas, context, thumbScale, THUMBNAIL_PIXEL_RATIO);
         renderTaskRef.current = task;
         return task.promise.finally(() => {
           if (renderTaskRef.current === task) {
@@ -583,16 +623,17 @@ function ThumbnailCanvas({ document, pageNumber, rootRef, size }: ThumbnailCanva
       cancelled = true;
       renderTaskRef.current?.cancel();
       renderTaskRef.current = null;
+      releaseCanvas(canvas);
     };
-  }, [document, isNearViewport, pageNumber, thumbScale]);
+  }, [document, pageNumber, thumbScale]);
 
   return (
-    <div className="pdf-thumbnail-canvas-wrap" ref={rowRef} style={{ width: thumbWidth, height: thumbHeight }}>
+    <div className="pdf-thumbnail-canvas-wrap" style={{ width: THUMBNAIL_WIDTH, height: thumbHeight }}>
       <canvas
         aria-label={`Page ${pageNumber} thumbnail`}
         className="pdf-thumbnail-canvas"
         ref={canvasRef}
-        style={{ width: thumbWidth, height: thumbHeight }}
+        style={{ width: THUMBNAIL_WIDTH, height: thumbHeight }}
       />
     </div>
   );
@@ -640,9 +681,10 @@ function renderPageToCanvas(
   canvas: HTMLCanvasElement,
   context: CanvasRenderingContext2D,
   scale: number,
+  maxPixelRatio: number,
 ): RenderTask {
   const viewport = page.getViewport({ scale });
-  const pixelRatio = window.devicePixelRatio || 1;
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, maxPixelRatio);
   canvas.width = Math.floor(viewport.width * pixelRatio);
   canvas.height = Math.floor(viewport.height * pixelRatio);
   canvas.style.width = `${Math.floor(viewport.width)}px`;
@@ -693,10 +735,42 @@ async function resolveOutlinePage(
   return pageIndex + 1;
 }
 
+function getPageCssWidth(size: PageSize | undefined, scale: number): number {
+  return Math.floor((size ?? FALLBACK_PAGE_SIZE).width * scale);
+}
+
+function getPageCssHeight(size: PageSize | undefined, scale: number): number {
+  return Math.floor((size ?? FALLBACK_PAGE_SIZE).height * scale);
+}
+
+function getMaxPageWidth(pageSizes: PageSize[]): number {
+  if (pageSizes.length === 0) {
+    return FALLBACK_PAGE_SIZE.width;
+  }
+  return Math.max(...pageSizes.map((size) => size.width));
+}
+
+function getThumbnailHeight(size: PageSize | undefined): number {
+  const pageSize = size ?? FALLBACK_PAGE_SIZE;
+  return Math.floor(pageSize.height * (THUMBNAIL_WIDTH / pageSize.width));
+}
+
+function getThumbnailRowHeight(size: PageSize | undefined): number {
+  return getThumbnailHeight(size) + THUMBNAIL_ROW_CHROME;
+}
+
+function releaseCanvas(canvas: HTMLCanvasElement | null): void {
+  if (!canvas) {
+    return;
+  }
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
 function isPdfRenderCancellation(error: unknown): boolean {
   return error instanceof Error && error.name === "RenderingCancelledException";
 }
 
 function pageCleanupDocument(document: PDFDocumentProxy): void {
-  document.cleanup();
+  void document.cleanup();
 }

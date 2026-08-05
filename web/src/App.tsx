@@ -649,7 +649,6 @@ export function App() {
         onPageOffsetChange={setPageOffset}
         onOpenGenerateDialog={() => setGenerateDialogOpen(true)}
         onApplyPreview={() => void applyPreview()}
-        onOpenSettings={openSettings}
         onEditorChange={updateEditorText}
         onSplitterKeyDown={resizeSplitterWithKeyboard}
         onSplitterPointerDown={startSplitterDrag}

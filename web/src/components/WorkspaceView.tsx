@@ -8,17 +8,14 @@ import {
   BookMarked,
   Download,
   FileText,
-  Home,
   Loader2,
   Play,
-  Settings,
   Wand2
 } from "lucide-react";
 import { JsonEditor, type JsonEditorHandle } from "../JsonEditor";
 import type { PreviewPdf, Project, Status } from "../types";
 import { formatDate } from "../utils";
 import { PdfViewer } from "./PdfViewer";
-import { StatusLine } from "./StatusLine";
 
 type WorkspaceViewProps = {
   project: Project | null;
@@ -39,7 +36,6 @@ type WorkspaceViewProps = {
   onPageOffsetChange: (value: string) => void;
   onOpenGenerateDialog: () => void;
   onApplyPreview: () => void;
-  onOpenSettings: () => void;
   onEditorChange: (value: string) => void;
   onSplitterKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   onSplitterPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -67,7 +63,6 @@ export function WorkspaceView({
   onPageOffsetChange,
   onOpenGenerateDialog,
   onApplyPreview,
-  onOpenSettings,
   onEditorChange,
   onSplitterKeyDown,
   onSplitterPointerDown,
@@ -81,52 +76,10 @@ export function WorkspaceView({
 
   return (
     <main className={`app-shell${isResizing ? " resizing" : ""}`}>
-      <header className="topbar">
-        <div className="brand">
-          <BookMarked size={22} aria-hidden="true" />
-          <div>
-            <h1>{project?.name ?? "PDF Bookmark Workspace"}</h1>
-            <p>
-              {project
-                ? `${project.pdf_filename} - ${project.page_count} pages`
-                : "Editor and preview for TOC JSON."}
-            </p>
-          </div>
-        </div>
-
-        <div className="toolbar">
-          <button className="secondary-action" type="button" onClick={onReturnHome}>
-            <Home size={16} />
-            Home
-          </button>
-          <button
-            className="secondary-action"
-            type="button"
-            disabled={!project || status.kind === "loading"}
-            onClick={onOpenGenerateDialog}
-          >
-            <Wand2 size={16} />
-            AI Generate
-          </button>
-          <button
-            className="primary-action"
-            type="button"
-            disabled={!canUseProjectActions}
-            onClick={onApplyPreview}
-          >
-            {status.kind === "loading" ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
-            Preview
-          </button>
-          {previewPdf ? (
-            <a className="download-action" href={previewPdf.url} download={previewPdf.filename}>
-              <Download size={16} />
-              Download
-            </a>
-          ) : null}
-          <button className="secondary-action icon-only" type="button" onClick={onOpenSettings}>
-            <Settings size={16} />
-          </button>
-        </div>
+      <header className="topbar workspace-topbar">
+        <button className="home-logo-button" type="button" aria-label="Home" onClick={onReturnHome}>
+          <BookMarked size={20} aria-hidden="true" />
+        </button>
       </header>
 
       <section className="workspace-grid" ref={workspaceRef} style={workspaceStyle}>
@@ -136,6 +89,15 @@ export function WorkspaceView({
               <h2>TOC JSON</h2>
               <p>Autosaved - updated {formatDate(project?.toc_updated_at ?? null)}</p>
             </div>
+            <button
+              className="secondary-action"
+              type="button"
+              disabled={!project || status.kind === "loading"}
+              onClick={onOpenGenerateDialog}
+            >
+              <Wand2 size={16} />
+              AI Generate
+            </button>
           </div>
 
           <JsonEditor ref={editorRef} value={tocText} onChange={onEditorChange} />
@@ -158,28 +120,45 @@ export function WorkspaceView({
         />
 
         <section className="preview-pane">
-          <div className="pane-header">
-            <div>
-              <h2>{previewPdf ? "Bookmarked Preview" : "Source PDF"}</h2>
-              <p>{project ? project.pdf_filename : "No PDF selected"}</p>
-            </div>
-            <div className="preview-statusbar">
-              <label className="offset-control">
-                <span>Offset</span>
-                <input
-                  type="number"
-                  step="1"
-                  value={pageOffset}
-                  onChange={(event) => onPageOffsetChange(event.target.value)}
-                />
-              </label>
-              <StatusLine status={status} />
-            </div>
-          </div>
-
           <div className="pdf-frame">
             {project ? (
-              <PdfViewer source={pdfFrameSrc} />
+              <PdfViewer
+                source={pdfFrameSrc}
+                toolbarStart={(
+                  <div className="pdf-meta-leading">
+                    <button
+                      className="primary-action"
+                      type="button"
+                      disabled={!canUseProjectActions}
+                      onClick={onApplyPreview}
+                    >
+                      {status.kind === "loading" ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
+                      Preview
+                    </button>
+                  </div>
+                )}
+                toolbarControlsExtra={(
+                  <label className="offset-control">
+                    <span>Offset</span>
+                    <input
+                      type="number"
+                      step="1"
+                      value={pageOffset}
+                      onChange={(event) => onPageOffsetChange(event.target.value)}
+                    />
+                  </label>
+                )}
+                toolbarEnd={(
+                  <div className="preview-statusbar">
+                    {previewPdf ? (
+                      <a className="download-action" href={previewPdf.url} download={previewPdf.filename}>
+                        <Download size={16} />
+                        Download
+                      </a>
+                    ) : null}
+                  </div>
+                )}
+              />
             ) : (
               <div className="empty-preview">
                 <FileText size={34} />
