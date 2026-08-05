@@ -8,7 +8,9 @@ import {
   useRef,
   useState
 } from "react";
+import { useLocation, useMatch, useNavigate } from "react-router-dom";
 import { parseError, requestJson } from "./api";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { GenerateDialog } from "./components/GenerateDialog";
 import { HomeView } from "./components/HomeView";
 import { SettingsView } from "./components/SettingsView";
@@ -20,8 +22,7 @@ import type {
   Project,
   SettingsDraft,
   SettingsState,
-  Status,
-  View
+  Status
 } from "./types";
 import { makeBookmarkedFilename } from "./utils";
 
@@ -34,7 +35,12 @@ function clampSplitPercent(value: number): number {
 }
 
 export function App() {
-  const [view, setView] = useState<View>({ kind: "home" });
+  const navigate = useNavigate();
+  const location = useLocation();
+  const projectRouteMatch = useMatch("/projects/:projectId");
+  const settingsRouteMatch = useMatch("/settings");
+  const currentProjectId = projectRouteMatch?.params.projectId ?? null;
+  const isSettingsRoute = Boolean(settingsRouteMatch);
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
   const [tocText, setTocText] = useState("");
@@ -47,6 +53,7 @@ export function App() {
     apiKey: ""
   });
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [projectPendingDelete, setProjectPendingDelete] = useState<Project | null>(null);
   const [tocStart, setTocStart] = useState("1");
   const [tocEnd, setTocEnd] = useState("1");
   const [pdfVersion, setPdfVersion] = useState(0);
@@ -72,8 +79,66 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!currentProjectId) {
+      return;
+    }
+    if (project?.id === currentProjectId) {
+      return;
+    }
+
+    const projectId = currentProjectId;
+    let cancelled = false;
+    setStatus({ kind: "loading", message: "Loading project" });
+    setProject(null);
+    setTocText("");
+    setPageOffset("0");
+    lastSavedTocRef.current = "";
+    lastSavedOffsetRef.current = "0";
+    clearPreviewPdf();
+
+    async function loadProjectRoute() {
+      try {
+        await reloadProject(projectId);
+        if (cancelled) {
+          return;
+        }
+        setPdfVersion((value) => value + 1);
+        setStatus({ kind: "idle", message: "Project loaded" });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setProject(null);
+        setTocText("");
+        setStatus({
+          kind: "error",
+          message: error instanceof Error ? error.message : "Failed to load project"
+        });
+      }
+    }
+
+    void loadProjectRoute();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectId, project?.id]);
+
+  useEffect(() => {
+    if (currentProjectId || isSettingsRoute) {
+      return;
+    }
+
+    setProject(null);
+    setTocText("");
+    lastSavedTocRef.current = "";
+    lastSavedOffsetRef.current = "0";
+    clearPreviewPdf();
+  }, [currentProjectId, isSettingsRoute]);
+
+  useEffect(() => {
     function openEditorSearch(event: KeyboardEvent) {
-      if (view.kind !== "workspace") {
+      if (!currentProjectId) {
         return;
       }
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "f") {
@@ -86,7 +151,7 @@ export function App() {
 
     window.addEventListener("keydown", openEditorSearch, true);
     return () => window.removeEventListener("keydown", openEditorSearch, true);
-  }, [view.kind]);
+  }, [currentProjectId]);
 
   useEffect(() => {
     return () => {
@@ -153,7 +218,12 @@ export function App() {
   }, [activeGenerationJobId, project?.id]);
 
   useEffect(() => {
-    if (view.kind !== "workspace" || !project || tocText === lastSavedTocRef.current) {
+    if (
+      !currentProjectId ||
+      !project ||
+      project.id !== currentProjectId ||
+      tocText === lastSavedTocRef.current
+    ) {
       return;
     }
 
@@ -166,10 +236,15 @@ export function App() {
     }, 700);
 
     return () => window.clearTimeout(timeoutId);
-  }, [project?.id, tocText, view.kind]);
+  }, [currentProjectId, project?.id, tocText]);
 
   useEffect(() => {
-    if (view.kind !== "workspace" || !project || pageOffset === lastSavedOffsetRef.current) {
+    if (
+      !currentProjectId ||
+      !project ||
+      project.id !== currentProjectId ||
+      pageOffset === lastSavedOffsetRef.current
+    ) {
       return;
     }
 
@@ -188,7 +263,7 @@ export function App() {
     }, 500);
 
     return () => window.clearTimeout(timeoutId);
-  }, [pageOffset, project?.id, view.kind]);
+  }, [currentProjectId, pageOffset, project?.id]);
 
   const workspaceStyle = {
     "--editor-split": `${splitPercent}%`
@@ -228,20 +303,8 @@ export function App() {
     }
   }
 
-  async function openProject(projectId: string) {
-    setStatus({ kind: "loading", message: "Loading project" });
-    clearPreviewPdf();
-    try {
-      await reloadProject(projectId);
-      setPdfVersion((value) => value + 1);
-      setView({ kind: "workspace", projectId });
-      setStatus({ kind: "idle", message: "Project loaded" });
-    } catch (error) {
-      setStatus({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Failed to load project"
-      });
-    }
+  function openProject(projectId: string) {
+    navigate(`/projects/${encodeURIComponent(projectId)}`);
   }
 
   async function reloadProject(projectId: string) {
@@ -257,7 +320,7 @@ export function App() {
   }
 
   function returnHome() {
-    setView({ kind: "home" });
+    navigate("/");
     setProject(null);
     setTocText("");
     lastSavedTocRef.current = "";
@@ -291,7 +354,7 @@ export function App() {
       const data = (await response.json()) as { project: Project };
       setPendingTocFile(null);
       await loadProjects();
-      await openProject(data.project.id);
+      openProject(data.project.id);
     } catch (error) {
       setStatus({
         kind: "error",
@@ -301,14 +364,10 @@ export function App() {
   }
 
   async function deleteProject(projectId: string) {
-    if (!window.confirm("Delete this project and its local PDF/JSON files?")) {
-      return;
-    }
-
     try {
       await requestJson<{ status: string }>(`/api/projects/${projectId}`, { method: "DELETE" });
       await loadProjects();
-      if (project?.id === projectId) {
+      if (currentProjectId === projectId) {
         returnHome();
       }
       setStatus({ kind: "success", message: "Project deleted" });
@@ -317,6 +376,13 @@ export function App() {
         kind: "error",
         message: error instanceof Error ? error.message : "Failed to delete project"
       });
+    }
+  }
+
+  function requestProjectDelete(projectId: string) {
+    const nextProject = projects.find((item) => item.id === projectId) ?? null;
+    if (nextProject) {
+      setProjectPendingDelete(nextProject);
     }
   }
 
@@ -512,18 +578,16 @@ export function App() {
   }
 
   function openSettings() {
-    setView({
-      kind: "settings",
-      returnProjectId: view.kind === "workspace" ? view.projectId : undefined
-    });
+    navigate("/settings", { state: { from: location.pathname } });
   }
 
   function leaveSettings() {
-    if (view.kind === "settings" && view.returnProjectId) {
-      setView({ kind: "workspace", projectId: view.returnProjectId });
+    const state = location.state as { from?: string } | null;
+    if (state?.from && state.from !== "/settings") {
+      navigate(state.from);
       return;
     }
-    setView({ kind: "home" });
+    navigate("/");
   }
 
   function clearPreviewPdf() {
@@ -600,7 +664,22 @@ export function App() {
     }
   }
 
-  if (view.kind === "settings") {
+  const deleteProjectDialog = projectPendingDelete ? (
+    <ConfirmDialog
+      title="Delete project"
+      message={`Delete "${projectPendingDelete.name}" and its local PDF/JSON files?`}
+      confirmLabel="Delete"
+      tone="danger"
+      onCancel={() => setProjectPendingDelete(null)}
+      onConfirm={() => {
+        const projectId = projectPendingDelete.id;
+        setProjectPendingDelete(null);
+        void deleteProject(projectId);
+      }}
+    />
+  ) : null;
+
+  if (isSettingsRoute) {
     return (
       <SettingsView
         settings={settings}
@@ -613,17 +692,34 @@ export function App() {
     );
   }
 
-  if (view.kind === "home") {
+  if (location.pathname === "/") {
     return (
-      <HomeView
-        projects={projects}
-        pendingTocFile={pendingTocFile}
+      <>
+        <HomeView
+          projects={projects}
+          pendingTocFile={pendingTocFile}
+          status={status}
+          onPendingTocFileChange={setPendingTocFile}
+          onCreateProject={(event) => void createProject(event)}
+          onOpenProject={openProject}
+          onDeleteProject={requestProjectDelete}
+          onOpenSettings={openSettings}
+        />
+        {deleteProjectDialog}
+      </>
+    );
+  }
+
+  if (!currentProjectId) {
+    return <NotFoundView onReturnHome={returnHome} />;
+  }
+
+  if (!project || project.id !== currentProjectId) {
+    return (
+      <ProjectRouteFallback
+        projectId={currentProjectId}
         status={status}
-        onPendingTocFileChange={setPendingTocFile}
-        onCreateProject={(event) => void createProject(event)}
-        onOpenProject={(projectId) => void openProject(projectId)}
-        onDeleteProject={(projectId) => void deleteProject(projectId)}
-        onOpenSettings={openSettings}
+        onReturnHome={returnHome}
       />
     );
   }
@@ -667,6 +763,52 @@ export function App() {
           onGenerate={() => void generateToc()}
         />
       ) : null}
+      {deleteProjectDialog}
     </>
+  );
+}
+
+type RouteFallbackProps = {
+  onReturnHome: () => void;
+};
+
+function NotFoundView({ onReturnHome }: RouteFallbackProps) {
+  return (
+    <main className="app-shell route-fallback-shell">
+      <section className="route-fallback">
+        <h1>Page not found</h1>
+        <p>The route does not exist in this workspace.</p>
+        <button className="secondary-action" type="button" onClick={onReturnHome}>
+          Home
+        </button>
+      </section>
+    </main>
+  );
+}
+
+type ProjectRouteFallbackProps = {
+  projectId: string;
+  status: Status;
+  onReturnHome: () => void;
+};
+
+function ProjectRouteFallback({ projectId, status, onReturnHome }: ProjectRouteFallbackProps) {
+  const isLoading = status.kind === "loading";
+  return (
+    <main className="app-shell route-fallback-shell">
+      <section className="route-fallback">
+        <h1>{isLoading ? "Loading project" : "Project unavailable"}</h1>
+        <p>
+          {isLoading
+            ? `Opening ${projectId}.`
+            : status.kind === "error"
+              ? status.message
+              : `Project ${projectId} is not loaded.`}
+        </p>
+        <button className="secondary-action" type="button" onClick={onReturnHome}>
+          Home
+        </button>
+      </section>
+    </main>
   );
 }

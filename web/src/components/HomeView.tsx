@@ -31,7 +31,6 @@ export function HomeView({
           <BookMarked size={22} aria-hidden="true" />
           <div>
             <h1>PDF Bookmark Manager</h1>
-            <p>Local projects for PDF and TOC JSON workspaces.</p>
           </div>
         </div>
 
@@ -70,9 +69,6 @@ export function HomeView({
         <div className="manager-header">
           <div>
             <h2>Projects</h2>
-            <p>
-              {projects.length} local project{projects.length === 1 ? "" : "s"}
-            </p>
           </div>
           <StatusLine status={status} />
         </div>

@@ -4,11 +4,6 @@ export type Status =
   | { kind: "success"; message: string }
   | { kind: "error"; message: string };
 
-export type View =
-  | { kind: "home" }
-  | { kind: "workspace"; projectId: string }
-  | { kind: "settings"; returnProjectId?: string };
-
 export type ValidationIssue = {
   message: string;
 };

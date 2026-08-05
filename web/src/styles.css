@@ -120,9 +120,6 @@ h2 {
   font-weight: 650;
 }
 
-.brand p,
-.pane-header p,
-.manager-header p,
 .project-name small,
 .settings-note {
   margin-top: 2px;
@@ -142,6 +139,7 @@ h2 {
 .offset-control,
 .primary-action,
 .secondary-action,
+.danger-action,
 .download-action {
   display: inline-flex;
   align-items: center;
@@ -195,6 +193,7 @@ h2 {
 
 .primary-action,
 .secondary-action,
+.danger-action,
 .download-action {
   padding: 5px 9px;
   cursor: pointer;
@@ -210,8 +209,19 @@ h2 {
   background: #265c85;
 }
 
+.danger-action {
+  border-color: #a6333f;
+  color: #ffffff;
+  background: #a6333f;
+}
+
+.danger-action:hover:not(:disabled) {
+  background: #8a2634;
+}
+
 .primary-action:disabled,
-.secondary-action:disabled {
+.secondary-action:disabled,
+.danger-action:disabled {
   cursor: not-allowed;
   color: #89929c;
   border-color: #c7ced6;
@@ -306,7 +316,6 @@ button.project-row:hover {
 
 .project-name strong,
 .project-name small,
-.pane-header p,
 .status-pill span {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -351,6 +360,26 @@ button.project-row:hover {
   align-content: start;
   gap: 12px;
   padding: 18px;
+}
+
+.route-fallback-shell {
+  place-items: center;
+  padding: 24px;
+}
+
+.route-fallback {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  width: min(460px, 100%);
+  padding: 18px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+}
+
+.route-fallback p {
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .settings-form {
@@ -903,6 +932,24 @@ button.project-row:hover {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.confirm-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.confirm-title svg {
+  color: #a6333f;
+  flex: 0 0 auto;
+}
+
+.confirm-message {
+  color: #38414a;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .warning-text {

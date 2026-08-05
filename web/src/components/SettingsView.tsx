@@ -27,7 +27,6 @@ export function SettingsView({
           <Settings size={22} aria-hidden="true" />
           <div>
             <h1>LLM Settings</h1>
-            <p>OpenAI-compatible API configuration for local generation.</p>
           </div>
         </div>
         <div className="toolbar">

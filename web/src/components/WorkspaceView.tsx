@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { JsonEditor, type JsonEditorHandle } from "../JsonEditor";
 import type { PreviewPdf, Project, Status } from "../types";
-import { formatDate } from "../utils";
 import { PdfViewer } from "./PdfViewer";
 
 type WorkspaceViewProps = {
@@ -87,7 +86,6 @@ export function WorkspaceView({
           <div className="pane-header">
             <div>
               <h2>TOC JSON</h2>
-              <p>Autosaved - updated {formatDate(project?.toc_updated_at ?? null)}</p>
             </div>
             <button
               className="secondary-action"
