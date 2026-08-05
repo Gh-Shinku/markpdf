@@ -4,7 +4,7 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -59,7 +59,41 @@ def _run_generate_toc_job(
     payload: GeneratePayload,
     settings: dict[str, Any],
 ) -> None:
-    generation_job_store.mark_running(job_id, "Rendering TOC pages and calling VLM")
+    total_pages = payload.toc_end - payload.toc_start + 1
+    generation_job_store.mark_running(job_id, "Preparing TOC generation")
+
+    def record_page_progress(
+        page_call_index: int,
+        callback_total_pages: int,
+        source: str,
+        stage: str,
+        entries: int | None,
+        _elapsed: float | None,
+    ) -> None:
+        if stage == "rendering":
+            phase = "rendering"
+            message = f"Rendering TOC page {page_call_index} of {callback_total_pages}"
+            completed_pages = page_call_index - 1
+        elif stage == "scanning":
+            phase = "scanning"
+            message = f"Reading TOC page {page_call_index} of {callback_total_pages} with VLM"
+            completed_pages = page_call_index - 1
+        else:
+            phase = "processing"
+            message = f"Processed TOC page {page_call_index} of {callback_total_pages}"
+            completed_pages = page_call_index
+
+        generation_job_store.update_progress(
+            job_id,
+            phase=phase,
+            message=message,
+            current_page=page_call_index,
+            completed_pages=completed_pages,
+            total_pages=callback_total_pages,
+            source=source.lower(),
+            entries=entries,
+        )
+
     try:
         toc_data, _, _, _, stats = extract_toc_json(
             input_pdf=store.pdf_path(project_id),
@@ -72,6 +106,15 @@ def _run_generate_toc_job(
             cache_dir=store.cache_dir(),
             overwrite_cache=False,
             mode="flat",
+            on_flat_page_event=record_page_progress,
+        )
+        generation_job_store.update_progress(
+            job_id,
+            phase="saving",
+            message="Saving generated TOC JSON",
+            current_page=total_pages,
+            completed_pages=total_pages,
+            total_pages=total_pages,
         )
         toc_text = json.dumps(toc_data, ensure_ascii=False, indent=2)
         metadata = store.save_toc_text(project_id, toc_text, generated=True)
@@ -231,6 +274,10 @@ def generate_project_toc(
     if not api_key:
         raise HTTPException(status_code=400, detail="LLM API key is not configured")
 
+    active_job = generation_job_store.find_active_job(project_id)
+    if active_job is not None:
+        raise HTTPException(status_code=409, detail="TOC generation is already running for this project")
+
     job = generation_job_store.create_job(
         project_id=project_id,
         toc_start=payload.toc_start,
@@ -238,6 +285,23 @@ def generate_project_toc(
     )
     background_tasks.add_task(_run_generate_toc_job, job["id"], project_id, payload, settings)
     return {"job": job}
+
+
+@router.get("/projects/{project_id}/generation-jobs")
+def list_project_generation_jobs(
+    project_id: str,
+    limit: int = Query(default=10, ge=1, le=50),
+) -> dict[str, Any]:
+    _project_or_404(project_id)
+    return {"jobs": generation_job_store.list_jobs(project_id, limit)}
+
+
+@router.get("/generation-jobs")
+def list_generation_jobs(
+    limit: int = Query(default=50, ge=1, le=100),
+    status: str | None = Query(default=None, pattern="^(queued|running|succeeded|failed)$"),
+) -> dict[str, Any]:
+    return {"jobs": generation_job_store.list_all_jobs(limit=limit, status=status)}
 
 
 @router.get("/jobs/{job_id}")

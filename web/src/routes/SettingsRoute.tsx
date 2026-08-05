@@ -45,6 +45,7 @@ export function SettingsRoute() {
       onThemePreferenceChange={setPreference}
       onBack={back}
       onOpenHome={() => navigate("/")}
+      onOpenTasks={() => navigate("/tasks")}
       onSave={() => saveMutation.mutate(draft)}
     />
   );

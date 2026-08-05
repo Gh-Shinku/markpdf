@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ChevronLeft,
@@ -58,9 +66,20 @@ const MAIN_MAX_PIXEL_RATIO = 2;
 const THUMBNAIL_PIXEL_RATIO = 1;
 const PDFJS_RESOURCE_BASE = "/pdfjs";
 const FALLBACK_PAGE_SIZE: PageSize = { width: 612, height: 792 };
+const SIDEBAR_WIDTH_STORAGE_KEY = "bookmark.pdf-sidebar-width";
+const MIN_SIDEBAR_WIDTH = 160;
+const MAX_SIDEBAR_WIDTH = 420;
+const MIN_MAIN_WIDTH = 240;
 
 function clampScale(value: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
+}
+
+function initialSidebarWidth(): number {
+  const savedWidth = Number.parseInt(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) ?? "", 10);
+  return Number.isFinite(savedWidth)
+    ? Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, savedWidth))
+    : 220;
 }
 
 export function PdfViewer({
@@ -69,6 +88,7 @@ export function PdfViewer({
   toolbarControlsExtra,
   toolbarEnd
 }: PdfViewerProps) {
+  const viewerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const sidebarBodyRef = useRef<HTMLDivElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -82,6 +102,8 @@ export function PdfViewer({
   const [stageWidth, setStageWidth] = useState(0);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("thumbnails");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
+  const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>({ kind: "idle" });
 
   const pageCount = pdfDocument?.numPages ?? 0;
@@ -111,6 +133,22 @@ export function PdfViewer({
     Math.floor(getMaxPageWidth(pageSizes) * scale) + PAGE_HORIZONTAL_PADDING * 2,
   );
 
+  function maxSidebarWidth(): number {
+    const viewerWidth = viewerRef.current?.getBoundingClientRect().width ?? 0;
+    if (!viewerWidth) return MAX_SIDEBAR_WIDTH;
+    return Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, viewerWidth - MIN_MAIN_WIDTH));
+  }
+
+  function clampSidebarWidth(width: number): number {
+    return Math.min(maxSidebarWidth(), Math.max(MIN_SIDEBAR_WIDTH, width));
+  }
+
+  function updateSidebarWidth(clientX: number) {
+    const bounds = viewerRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setSidebarWidth(clampSidebarWidth(clientX - bounds.left));
+  }
+
   useEffect(() => {
     const host = stageRef.current;
     if (!host) {
@@ -122,6 +160,20 @@ export function PdfViewer({
       setStageWidth(width);
     });
     observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer) return;
+    const observer = new ResizeObserver(() => {
+      setSidebarWidth((current) => clampSidebarWidth(current));
+    });
+    observer.observe(viewer);
     return () => observer.disconnect();
   }, []);
 
@@ -293,6 +345,43 @@ export function PdfViewer({
     setFitMode(true);
   }
 
+  function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    setIsSidebarResizing(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateSidebarWidth(event.clientX);
+  }
+
+  function moveSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!isSidebarResizing) return;
+    event.preventDefault();
+    updateSidebarWidth(event.clientX);
+  }
+
+  function stopSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setIsSidebarResizing(false);
+  }
+
+  function resizeSidebarWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setSidebarWidth((current) => clampSidebarWidth(current - 16));
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setSidebarWidth((current) => clampSidebarWidth(current + 16));
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setSidebarWidth(MIN_SIDEBAR_WIDTH);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setSidebarWidth(maxSidebarWidth());
+    }
+  }
+
   function zoomOut() {
     setFitMode(false);
     setScale((value) => clampScale(value - SCALE_STEP));
@@ -323,7 +412,11 @@ export function PdfViewer({
   }
 
   return (
-    <div className={`pdf-viewer${isSidebarOpen ? "" : " sidebar-collapsed"}`}>
+    <div
+      ref={viewerRef}
+      className={`pdf-viewer${isSidebarOpen ? "" : " sidebar-collapsed"}${isSidebarResizing ? " sidebar-resizing" : ""}`}
+      style={{ "--pdf-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+    >
       <button
         className="pdf-sidebar-toggle"
         type="button"
@@ -395,6 +488,24 @@ export function PdfViewer({
           </>
         ) : null}
       </aside>
+
+      {isSidebarOpen ? (
+        <div
+          className="pdf-sidebar-resizer"
+          role="separator"
+          aria-label="Resize PDF sidebar"
+          aria-orientation="vertical"
+          aria-valuemin={MIN_SIDEBAR_WIDTH}
+          aria-valuemax={maxSidebarWidth()}
+          aria-valuenow={Math.round(sidebarWidth)}
+          tabIndex={0}
+          onKeyDown={resizeSidebarWithKeyboard}
+          onPointerDown={startSidebarResize}
+          onPointerMove={moveSidebarResize}
+          onPointerUp={stopSidebarResize}
+          onPointerCancel={stopSidebarResize}
+        />
+      ) : null}
 
       <section className="pdf-main" aria-label="PDF document">
         <div className={`pdf-viewer-toolbar${toolbarStart || toolbarEnd ? " with-meta" : ""}`}>

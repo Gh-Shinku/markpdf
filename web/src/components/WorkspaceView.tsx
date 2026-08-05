@@ -38,6 +38,7 @@ type WorkspaceViewProps = {
   minSplitPercent: number;
   maxSplitPercent: number;
   onReturnHome: () => void;
+  onOpenTasks: () => void;
   onOpenSettings: () => void;
   onPageOffsetChange: (value: string) => void;
   onOpenGenerateDialog: () => void;
@@ -67,6 +68,7 @@ export function WorkspaceView({
   minSplitPercent,
   maxSplitPercent,
   onReturnHome,
+  onOpenTasks,
   onOpenSettings,
   onPageOffsetChange,
   onOpenGenerateDialog,
@@ -82,7 +84,7 @@ export function WorkspaceView({
 
   return (
     <main className={`app-shell${isResizing ? " resizing" : ""}`}>
-      <AppNavigation active="workspace" onHome={onReturnHome} onSettings={onOpenSettings} />
+      <AppNavigation active="workspace" onHome={onReturnHome} onTasks={onOpenTasks} onSettings={onOpenSettings} />
       <header className="workspace-header">
         <button className="back-button" type="button" onClick={onReturnHome}>
           <ArrowLeft size={17} aria-hidden="true" />
@@ -110,7 +112,6 @@ export function WorkspaceView({
               AI Generate
             </button>
           </div>
-
           <JsonEditor ref={editorRef} value={tocText} theme={theme} onChange={onEditorChange} />
         </section>
 

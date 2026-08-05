@@ -244,6 +244,9 @@ def test_generate_toc_overwrites_saved_json(tmp_path, monkeypatch) -> None:
     assert job_response.status_code == 200
     job = job_response.json()["job"]
     assert job["status"] == "succeeded"
+    assert job["progress"]["phase"] == "completed"
+    assert job["progress"]["completed_pages"] == 2
+    assert job["progress"]["total_pages"] == 2
     assert job["result"]["project"]["generated_at"] is not None
     saved_toc = client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"]
     assert json.loads(saved_toc)[0]["title"] == "Generated"
@@ -324,3 +327,93 @@ def test_generation_job_persists_on_disk(tmp_path, isolated_project_store, monke
     reloaded_job = reloaded_store.get_job(job_id)
     assert reloaded_job["status"] == "succeeded"
     assert reloaded_job["project_id"] == project["id"]
+
+
+def test_generation_jobs_list_progress_and_recover_interrupted_job(tmp_path, isolated_project_store) -> None:
+    project = _create_project(tmp_path, page_count=3)
+    job_store = projects_route.generation_job_store
+    job = job_store.create_job(project["id"], toc_start=1, toc_end=3)
+    job_store.mark_running(job["id"], "Preparing TOC generation")
+    job_store.update_progress(
+        job["id"],
+        phase="scanning",
+        message="Reading TOC page 2 of 3 with VLM",
+        current_page=2,
+        completed_pages=1,
+        total_pages=3,
+        source="vlm",
+    )
+
+    list_response = client.get(f"/api/projects/{project['id']}/generation-jobs")
+    assert list_response.status_code == 200
+    listed_job = list_response.json()["jobs"][0]
+    assert listed_job["id"] == job["id"]
+    assert listed_job["progress"]["phase"] == "scanning"
+    assert listed_job["progress"]["completed_pages"] == 1
+
+    assert job_store.recover_interrupted_jobs() == 1
+    recovered_job = job_store.get_job(job["id"])
+    assert recovered_job["status"] == "failed"
+    assert recovered_job["progress"]["phase"] == "failed"
+    assert "restart" in recovered_job["error"]
+
+
+def test_global_generation_jobs_list_sorts_and_filters_status(tmp_path, isolated_project_store) -> None:
+    first_project = _create_project(tmp_path, page_count=2)
+    second_project = _create_project(tmp_path, page_count=2)
+    job_store = projects_route.generation_job_store
+    succeeded = job_store.create_job(first_project["id"], toc_start=1, toc_end=1)
+    job_store.mark_succeeded(succeeded["id"], "Generated", {})
+    active = job_store.create_job(second_project["id"], toc_start=1, toc_end=2)
+    job_store.mark_running(active["id"], "Generating")
+
+    all_response = client.get("/api/generation-jobs")
+    assert all_response.status_code == 200
+    assert [job["id"] for job in all_response.json()["jobs"]] == [active["id"], succeeded["id"]]
+
+    running_response = client.get("/api/generation-jobs?status=running")
+    assert running_response.status_code == 200
+    assert [job["id"] for job in running_response.json()["jobs"]] == [active["id"]]
+
+
+def test_generation_rejects_second_active_job(tmp_path) -> None:
+    project = _create_project(tmp_path, page_count=3)
+    client.put(
+        "/api/settings/llm",
+        json={"base_url": "https://example.test/v1", "model": "model-a", "api_key": "secret"},
+    )
+    projects_route.generation_job_store.create_job(project["id"], toc_start=1, toc_end=1)
+
+    response = client.post(
+        f"/api/projects/{project['id']}/generate-toc",
+        json={"toc_start": 1, "toc_end": 1},
+    )
+
+    assert response.status_code == 409
+    assert "already running" in response.json()["detail"]
+
+
+def test_generation_job_without_progress_is_normalized(tmp_path) -> None:
+    job_store = GenerationJobStore(tmp_path / "workspace_data")
+    job_store.jobs_dir.mkdir(parents=True)
+    legacy_job = {
+        "id": "legacy-job",
+        "type": "generate_toc",
+        "project_id": "project-1",
+        "status": "succeeded",
+        "message": "Generated TOC replaced the project JSON",
+        "toc_start": 3,
+        "toc_end": 5,
+        "created_at": "2026-08-05T00:00:00+00:00",
+        "updated_at": "2026-08-05T00:01:00+00:00",
+        "started_at": None,
+        "finished_at": "2026-08-05T00:01:00+00:00",
+        "error": None,
+        "result": None,
+    }
+    (job_store.jobs_dir / "legacy-job.json").write_text(json.dumps(legacy_job), encoding="utf-8")
+
+    normalized = job_store.get_job("legacy-job")
+
+    assert normalized["progress"]["phase"] == "completed"
+    assert normalized["progress"]["completed_pages"] == 3

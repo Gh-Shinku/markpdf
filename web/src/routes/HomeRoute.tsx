@@ -54,6 +54,7 @@ export function HomeRoute() {
         onCreateProjectInput={importFromInput}
         onOpenProject={(projectId) => navigate(`/projects/${encodeURIComponent(projectId)}`)}
         onDeleteProject={(projectId) => setPendingDelete(projects.find((item) => item.id === projectId) ?? null)}
+        onOpenTasks={() => navigate("/tasks")}
         onOpenSettings={() => navigate("/settings", { state: { from: "/" } })}
       />
       {pendingDelete ? (

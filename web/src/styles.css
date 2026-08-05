@@ -500,7 +500,7 @@ button.project-row:hover {
 }
 
 .pdf-viewer {
-  --pdf-sidebar-width: 156px;
+  --pdf-sidebar-width: 220px;
   position: relative;
   display: grid;
   grid-template-columns: var(--pdf-sidebar-width) minmax(0, 1fr);
@@ -511,6 +511,8 @@ button.project-row:hover {
   background: #dfe3e7;
   transition: grid-template-columns 180ms ease;
 }
+
+.pdf-viewer.sidebar-resizing { transition: none; }
 
 .pdf-viewer.sidebar-collapsed {
   grid-template-columns: 0 minmax(0, 1fr);
@@ -571,6 +573,33 @@ button.project-row:hover {
   background: #f6f7f8;
   border-right: 1px solid var(--border);
 }
+
+.pdf-sidebar-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--pdf-sidebar-width);
+  z-index: 5;
+  width: 10px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  outline: none;
+}
+
+.pdf-sidebar-resizer::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: var(--accent);
+  content: "";
+  opacity: 0;
+}
+
+.pdf-sidebar-resizer:hover::after,
+.pdf-sidebar-resizer:focus-visible::after,
+.pdf-viewer.sidebar-resizing .pdf-sidebar-resizer::after { opacity: 1; }
 
 .pdf-sidebar.collapsed {
   overflow: visible;
@@ -674,13 +703,12 @@ button.project-row:hover {
   width: 100%;
   min-height: 26px;
   padding: 4px 8px;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   background: transparent;
   color: #38414a;
   font-size: 12px;
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
   cursor: pointer;
 }
 

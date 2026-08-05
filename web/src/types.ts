@@ -38,6 +38,15 @@ export type SettingsDraft = {
 
 export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed";
 
+export type GenerationJobProgress = {
+  phase: "queued" | "rendering" | "scanning" | "processing" | "saving" | "completed" | "failed";
+  current_page: number | null;
+  completed_pages: number;
+  total_pages: number;
+  source: "vlm" | "cache" | null;
+  entries: number | null;
+};
+
 export type GenerationJob = {
   id: string;
   type: "generate_toc";
@@ -51,6 +60,7 @@ export type GenerationJob = {
   started_at: string | null;
   finished_at: string | null;
   error: string | null;
+  progress: GenerationJobProgress;
   result: {
     project?: Project;
     stats?: Record<string, unknown>;

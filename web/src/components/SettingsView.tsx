@@ -12,6 +12,7 @@ type SettingsViewProps = {
   onThemePreferenceChange: (value: ThemePreference) => void;
   onBack: () => void;
   onOpenHome: () => void;
+  onOpenTasks: () => void;
   onSave: () => void;
 };
 
@@ -23,11 +24,12 @@ export function SettingsView({
   onThemePreferenceChange,
   onBack,
   onOpenHome,
+  onOpenTasks,
   onSave
 }: SettingsViewProps) {
   return (
     <main className="app-shell settings-shell">
-      <AppNavigation active="settings" onHome={onOpenHome} onSettings={() => undefined} />
+      <AppNavigation active="settings" onHome={onOpenHome} onTasks={onOpenTasks} onSettings={() => undefined} />
       <header className="app-header">
         <div>
           <p className="eyebrow">Preferences</p>

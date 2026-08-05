@@ -10,9 +10,9 @@ import { MIN_SPLIT_PERCENT, MAX_SPLIT_PERCENT, useWorkspaceSplit } from "../hook
 import {
   applyProject,
   generateProjectToc,
-  getGenerationJob,
   getProject,
   getProjectToc,
+  listProjectGenerationJobs,
   projectKeys,
   saveProjectOffset,
   saveProjectToc
@@ -35,11 +35,13 @@ export function WorkspaceRoute() {
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [tocStart, setTocStart] = useState("1");
   const [tocEnd, setTocEnd] = useState("1");
-  const [generationJobId, setGenerationJobId] = useState<string | null>(null);
+  const [submittedGenerationJobId, setSubmittedGenerationJobId] = useState<string | null>(null);
+  const [isStartingGeneration, setIsStartingGeneration] = useState(false);
   const savedTocRef = useRef("");
   const savedOffsetRef = useRef("0");
   const tocSaveSequenceRef = useRef(0);
   const offsetSaveSequenceRef = useRef(0);
+  const handledTerminalJobsRef = useRef(new Set<string>());
 
   const tocMutation = useMutation({
     mutationFn: ({ value }: { value: string; sequence: number }) => saveProjectToc(projectId, value),
@@ -108,28 +110,35 @@ export function WorkspaceRoute() {
     return () => window.removeEventListener("keydown", openFind, true);
   }, []);
 
-  const jobQuery = useQuery({
-    queryKey: projectKeys.job(generationJobId ?? "idle"),
-    queryFn: () => getGenerationJob(generationJobId as string),
-    enabled: Boolean(generationJobId),
-    refetchInterval: 1500
+  const generationJobsQuery = useQuery({
+    queryKey: projectKeys.generationJobs(projectId),
+    queryFn: () => listProjectGenerationJobs(projectId),
+    enabled: Boolean(projectId),
+    refetchInterval: (query) => query.state.data?.some((job) => job.status === "queued" || job.status === "running") ? 1500 : false
   });
+  const generationJobs = generationJobsQuery.data ?? [];
+  const activeGenerationJob = generationJobs.find((job) => job.status === "queued" || job.status === "running");
 
   useEffect(() => {
-    const job = jobQuery.data;
+    const job = generationJobs[0];
     if (!job || job.status === "queued" || job.status === "running") return;
-    setGenerationJobId(null);
-    if (job.status === "failed") {
-      toast.error(job.error || job.message || "TOC generation failed");
-      return;
-    }
-    toast.success(job.message);
+    const version = `${job.id}:${job.updated_at}`;
+    if (handledTerminalJobsRef.current.has(version)) return;
+    handledTerminalJobsRef.current.add(version);
     void Promise.all([
       queryClient.invalidateQueries({ queryKey: projectKeys.detail(projectId) }),
       queryClient.invalidateQueries({ queryKey: projectKeys.toc(projectId) }),
-      queryClient.invalidateQueries({ queryKey: projectKeys.all })
+      queryClient.invalidateQueries({ queryKey: projectKeys.all }),
+      queryClient.invalidateQueries({ queryKey: projectKeys.allGenerationJobs })
     ]);
-  }, [jobQuery.data, projectId, queryClient]);
+    if (job.id !== submittedGenerationJobId) return;
+    setSubmittedGenerationJobId(null);
+    if (job.status === "failed") {
+      toast.error(job.error || job.message || "TOC generation failed");
+    } else {
+      toast.success(job.message);
+    }
+  }, [generationJobs, projectId, queryClient, submittedGenerationJobId]);
 
   async function flushAutosave() {
     const offset = Number.parseInt(pageOffset, 10);
@@ -165,7 +174,30 @@ export function WorkspaceRoute() {
     }
   }
 
-  const canUseProjectActions = Boolean(projectQuery.data && tocText.trim() && pageOffset.trim() && !isPreviewing && !generationJobId);
+  async function startGeneration() {
+    const start = Number.parseInt(tocStart, 10);
+    const end = Number.parseInt(tocEnd, 10);
+    if (!Number.isInteger(start) || !Number.isInteger(end)) {
+      toast.error("TOC page range must be integer page numbers");
+      return;
+    }
+
+    setIsStartingGeneration(true);
+    try {
+      const job = await generateProjectToc(projectId, start, end);
+      setSubmittedGenerationJobId(job.id);
+      queryClient.setQueryData(projectKeys.generationJobs(projectId), (current: typeof generationJobs | undefined) => [job, ...(current ?? [])]);
+      queryClient.setQueryData(projectKeys.allGenerationJobs, (current: typeof generationJobs | undefined) => [job, ...(current ?? [])]);
+      setGenerateDialogOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to start TOC generation");
+    } finally {
+      setIsStartingGeneration(false);
+    }
+  }
+
+  const isGenerating = Boolean(activeGenerationJob) || isStartingGeneration;
+  const canUseProjectActions = Boolean(projectQuery.data && tocText.trim() && pageOffset.trim() && !isPreviewing && !isGenerating);
   const workspaceStyle = useMemo(() => ({ "--editor-split": `${splitPercent}%` }) as React.CSSProperties, [splitPercent]);
 
   if (projectQuery.isLoading || tocQuery.isLoading) return <RouteMessage title="Loading project" message="Opening project workspace." onBack={() => navigate("/")} />;
@@ -180,7 +212,7 @@ export function WorkspaceRoute() {
         theme={theme}
         canUseProjectActions={canUseProjectActions}
         isPreviewing={isPreviewing}
-        isGenerating={Boolean(generationJobId)}
+        isGenerating={isGenerating}
         pdfVersion={pdfVersion}
         isResizing={isResizing}
         workspaceStyle={workspaceStyle}
@@ -190,6 +222,7 @@ export function WorkspaceRoute() {
         minSplitPercent={MIN_SPLIT_PERCENT}
         maxSplitPercent={MAX_SPLIT_PERCENT}
         onReturnHome={() => navigate("/")}
+        onOpenTasks={() => navigate("/tasks")}
         onOpenSettings={() => navigate("/settings", { state: { from: `/projects/${projectId}` } })}
         onPageOffsetChange={setPageOffset}
         onOpenGenerateDialog={() => setGenerateDialogOpen(true)}
@@ -209,16 +242,7 @@ export function WorkspaceRoute() {
           onTocStartChange={setTocStart}
           onTocEndChange={setTocEnd}
           onCancel={() => setGenerateDialogOpen(false)}
-          onGenerate={() => {
-            const start = Number.parseInt(tocStart, 10);
-            const end = Number.parseInt(tocEnd, 10);
-            if (!Number.isInteger(start) || !Number.isInteger(end)) {
-              toast.error("TOC page range must be integer page numbers");
-              return;
-            }
-            setGenerateDialogOpen(false);
-            generateProjectToc(projectId, start, end).then((job) => setGenerationJobId(job.id)).catch((error: Error) => toast.error(error.message));
-          }}
+          onGenerate={() => void startGeneration()}
         />
       ) : null}
     </>

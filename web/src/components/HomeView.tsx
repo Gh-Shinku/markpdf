@@ -9,6 +9,7 @@ type HomeViewProps = {
   onCreateProjectInput: (event: ChangeEvent<HTMLInputElement>) => void;
   onOpenProject: (projectId: string) => void;
   onDeleteProject: (projectId: string) => void;
+  onOpenTasks: () => void;
   onOpenSettings: () => void;
 };
 
@@ -18,6 +19,7 @@ export function HomeView({
   onCreateProjectInput,
   onOpenProject,
   onDeleteProject,
+  onOpenTasks,
   onOpenSettings
 }: HomeViewProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -38,6 +40,7 @@ export function HomeView({
       <AppNavigation
         active="home"
         onHome={() => undefined}
+        onTasks={onOpenTasks}
         onSettings={onOpenSettings}
       />
       <header className="app-header">

@@ -5,6 +5,8 @@ export const projectKeys = {
   all: ["projects"] as const,
   detail: (projectId: string) => ["projects", projectId] as const,
   toc: (projectId: string) => ["projects", projectId, "toc"] as const,
+  generationJobs: (projectId: string) => ["projects", projectId, "generation-jobs"] as const,
+  allGenerationJobs: ["generation-jobs", "all"] as const,
   job: (jobId: string) => ["generation-jobs", jobId] as const
 };
 
@@ -72,6 +74,17 @@ export async function generateProjectToc(projectId: string, tocStart: number, to
     body: JSON.stringify({ toc_start: tocStart, toc_end: tocEnd })
   });
   return data.job;
+}
+
+export async function listProjectGenerationJobs(projectId: string): Promise<GenerationJob[]> {
+  const data = await requestJson<{ jobs: GenerationJob[] }>(`/api/projects/${projectId}/generation-jobs`);
+  return data.jobs;
+}
+
+export async function listGenerationJobs(status?: GenerationJob["status"]): Promise<GenerationJob[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const data = await requestJson<{ jobs: GenerationJob[] }>(`/api/generation-jobs${query}`);
+  return data.jobs;
 }
 
 export async function getGenerationJob(jobId: string): Promise<GenerationJob> {

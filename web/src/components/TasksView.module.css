@@ -1,0 +1,84 @@
+.content {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  overflow: auto;
+}
+
+.activeCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.activeCount svg { color: var(--accent); }
+
+.filters {
+  display: inline-flex;
+  width: fit-content;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+}
+
+.filters button {
+  min-height: 28px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.filters button:hover { color: var(--text); }
+.filters .selected { color: var(--text); background: var(--surface-raised); box-shadow: 0 1px 2px rgb(31 35 40 / 12%); }
+
+.list {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.task {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(150px, auto) 30px;
+  align-items: center;
+  gap: 12px;
+  min-height: 82px;
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.status {
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+}
+.queued, .running { color: var(--accent); }
+.succeeded { color: var(--success); }
+.failed { color: var(--danger); }
+
+.summary { display: grid; min-width: 0; gap: 5px; }
+.titleRow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.titleRow strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.titleRow span { color: var(--text-secondary); font-size: 12px; }
+.summary p { overflow: hidden; color: var(--text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+.progress { height: 4px; overflow: hidden; border-radius: 2px; background: var(--surface-hover); }
+.progress span { display: block; height: 100%; background: var(--accent); transition: width 180ms ease; }
+.errorText { color: var(--danger) !important; }
+
+.meta { display: grid; justify-items: end; gap: 4px; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.openProject { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 4px; color: var(--text-secondary); background: transparent; cursor: pointer; }
+.openProject:hover { color: var(--accent); background: var(--accent-soft); }
+
+.empty { display: grid; justify-items: center; gap: 8px; padding: 56px 16px; color: var(--text-secondary); font-size: 13px; text-align: center; }
+.error { color: var(--danger); }
+
+@media (max-width: 620px) {
+  .task { grid-template-columns: 24px minmax(0, 1fr) 30px; gap: 8px; }
+  .meta { grid-column: 2; justify-items: start; grid-template-columns: repeat(2, auto); justify-content: space-between; }
+}
