@@ -83,6 +83,8 @@ export function TasksView({
       : job.status === filter,
   );
   const activeCount = jobs.filter(isActive).length;
+  const completedCount = jobs.filter((job) => job.status === "succeeded").length;
+  const failedCount = jobs.filter((job) => job.status === "failed").length;
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [providerId, setProviderId] = useState("");
   const verifiedProviders = providers.filter(
@@ -107,45 +109,58 @@ export function TasksView({
           <p className="eyebrow">Background work</p>
           <h1>Tasks</h1>
         </div>
-        <div className={styles.activeCount} aria-label={`${activeCount} active tasks`}>
-          <Clock3 size={16} aria-hidden="true" />
-          <span>{activeCount} active</span>
+        <div className={styles.headerStats} aria-label="Task status summary">
+          <span className={styles.headerStat}>
+            <Clock3 size={16} aria-hidden="true" />
+            {activeCount} active
+          </span>
+          <span>{completedCount} completed</span>
+          <span>{failedCount} failed</span>
         </div>
       </header>
 
       <section className={`${styles.content} app-content-panel`} aria-label="Generation tasks">
         <section className={styles.batch} aria-label="Create generation tasks">
-          <div className={styles.batchHeader}>
+          <div className={styles.batchTop}>
             <div>
               <p className="section-kicker">Batch generation</p>
               <h2>Select PDFs</h2>
             </div>
-            <button
-              className="primary-action"
-              type="button"
-              disabled={!selectedProjectIds.length || !providerId}
-              onClick={() =>
-                onStartBatch(
-                  selectedProjectIds.map((projectId) => {
-                    const project = projects.find((item) => item.id === projectId)!;
-                    return { projectId, tocStart: 1, tocEnd: project.page_count, providerId };
-                  }),
-                )
-              }
-            >
-              <Plus size={16} />
-              Queue
-            </button>
+            <div className={styles.batchActions}>
+              <label className={styles.providerField}>
+                <span>VLM API</span>
+                <select value={providerId} onChange={(event) => setProviderId(event.target.value)}>
+                  <option value="">No verified VLM API</option>
+                  {verifiedProviders.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.name} - {provider.model}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="primary-action"
+                type="button"
+                disabled={!selectedProjectIds.length || !providerId}
+                onClick={() =>
+                  onStartBatch(
+                    selectedProjectIds.map((projectId) => {
+                      const project = projects.find((item) => item.id === projectId)!;
+                      return { projectId, tocStart: 1, tocEnd: project.page_count, providerId };
+                    }),
+                  )
+                }
+              >
+                <Plus size={16} />
+                Queue
+              </button>
+            </div>
           </div>
-          <div className={styles.batchControls}>
-            <select value={providerId} onChange={(event) => setProviderId(event.target.value)}>
-              <option value="">No verified VLM API</option>
-              {verifiedProviders.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.name} - {provider.model}
-                </option>
-              ))}
-            </select>
+          <div className={styles.pickerHeader}>
+            <span>PDFs</span>
+            <small>
+              {selectedProjectIds.length} selected · {projects.length} total
+            </small>
           </div>
           <div className={styles.projectPicker}>
             {projects.map((project) => (
@@ -171,106 +186,122 @@ export function TasksView({
             ))}
           </div>
         </section>
-        <div className={styles.filters} role="group" aria-label="Filter tasks">
-          {filters.map(({ value, label }) => (
-            <button
-              key={value}
-              className={filter === value ? styles.selected : ""}
-              type="button"
-              onClick={() => setFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
 
-        {isLoading ? <div className={styles.empty}>Loading tasks...</div> : null}
-        {error ? (
-          <div className={`${styles.empty} ${styles.error}`}>Could not load tasks: {error}</div>
-        ) : null}
-        {!isLoading && !error && visibleJobs.length === 0 ? <EmptyTasks filter={filter} /> : null}
-        {!isLoading && !error && visibleJobs.length > 0 ? (
-          <div className={styles.list}>
-            {visibleJobs.map((job) => {
-              const projectName = projectNames.get(job.project_id);
-              const progress = job.progress;
-              const percent =
-                progress.total_pages > 0
-                  ? Math.min(
-                      100,
-                      Math.round((progress.completed_pages / progress.total_pages) * 100),
-                    )
-                  : 0;
-              return (
-                <article className={styles.task} key={job.id}>
-                  <div
-                    className={`${styles.status} ${styles[job.status]}`}
-                    title={statusLabel(job)}
-                  >
-                    <StatusIcon job={job} />
-                  </div>
-                  <div className={styles.summary}>
-                    <div className={styles.titleRow}>
-                      <strong>{projectName ?? "Deleted project"}</strong>
-                      <span>{statusLabel(job)}</span>
+        <section className={styles.taskPanel} aria-label="Task history">
+          <div className={styles.listToolbar}>
+            <div className={styles.listHeading}>
+              <h2>Generation jobs</h2>
+              <span>{visibleJobs.length} shown</span>
+            </div>
+            <div className={styles.filters} role="group" aria-label="Filter tasks">
+              {filters.map(({ value, label }) => (
+                <button
+                  key={value}
+                  className={filter === value ? styles.selected : ""}
+                  type="button"
+                  onClick={() => setFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {isLoading ? <div className={styles.empty}>Loading tasks...</div> : null}
+          {error ? (
+            <div className={`${styles.empty} ${styles.error}`}>Could not load tasks: {error}</div>
+          ) : null}
+          {!isLoading && !error && visibleJobs.length === 0 ? <EmptyTasks filter={filter} /> : null}
+          {!isLoading && !error && visibleJobs.length > 0 ? (
+            <div className={styles.list}>
+              {visibleJobs.map((job) => {
+                const projectName = projectNames.get(job.project_id);
+                const progress = job.progress;
+                const percent =
+                  progress.total_pages > 0
+                    ? Math.min(
+                        100,
+                        Math.round((progress.completed_pages / progress.total_pages) * 100),
+                      )
+                    : 0;
+                const hasActions = Boolean(projectName) || job.status === "succeeded";
+                return (
+                  <article className={styles.task} key={job.id}>
+                    <div
+                      className={`${styles.status} ${styles[job.status]}`}
+                      title={statusLabel(job)}
+                    >
+                      <StatusIcon job={job} />
                     </div>
-                    <p>{job.message}</p>
-                    {isActive(job) ? (
-                      <div className={styles.progress} aria-label={`${percent}% complete`}>
-                        <span style={{ width: `${percent}%` }} />
+                    <div className={styles.summary}>
+                      <div className={styles.titleRow}>
+                        <strong>{projectName ?? "Deleted project"}</strong>
+                        <span className={`${styles.statusBadge} ${styles[job.status]}`}>
+                          {statusLabel(job)}
+                        </span>
+                      </div>
+                      <p>{job.message}</p>
+                      {isActive(job) ? (
+                        <div className={styles.progress} aria-label={`${percent}% complete`}>
+                          <span style={{ width: `${percent}%` }} />
+                        </div>
+                      ) : null}
+                      {job.status === "failed" && job.error ? (
+                        <p className={styles.errorText}>{job.error}</p>
+                      ) : null}
+                    </div>
+                    <div className={styles.meta}>
+                      <span>
+                        TOC pages {job.toc_start}-{job.toc_end}
+                      </span>
+                      <span>
+                        {isActive(job)
+                          ? `${progress.completed_pages}/${progress.total_pages} pages`
+                          : formatDate(job.finished_at ?? job.updated_at)}
+                      </span>
+                    </div>
+                    {hasActions ? (
+                      <div className={styles.jobActions}>
+                        {projectName ? (
+                          <button
+                            className={styles.taskAction}
+                            type="button"
+                            onClick={() => onOpenProject(job.project_id)}
+                            title="Open workspace"
+                            aria-label={`Open ${projectName}`}
+                          >
+                            <ExternalLink size={16} aria-hidden="true" />
+                          </button>
+                        ) : null}
+                        {job.status === "succeeded" ? (
+                          <>
+                            <button
+                              className={styles.taskAction}
+                              type="button"
+                              title="Apply generated TOC"
+                              aria-label="Apply generated TOC"
+                              onClick={() => onApplyJob(job.id)}
+                            >
+                              <Check size={16} />
+                            </button>
+                            <a
+                              className={styles.taskAction}
+                              href={`/api/jobs/${job.id}/download`}
+                              title="Download generated PDF"
+                              aria-label="Download generated PDF"
+                            >
+                              <Download size={16} />
+                            </a>
+                          </>
+                        ) : null}
                       </div>
                     ) : null}
-                    {job.status === "failed" && job.error ? (
-                      <p className={styles.errorText}>{job.error}</p>
-                    ) : null}
-                  </div>
-                  <div className={styles.meta}>
-                    <span>
-                      TOC pages {job.toc_start}-{job.toc_end}
-                    </span>
-                    <span>
-                      {isActive(job)
-                        ? `${progress.completed_pages}/${progress.total_pages} pages`
-                        : formatDate(job.finished_at ?? job.updated_at)}
-                    </span>
-                  </div>
-                  {projectName ? (
-                    <button
-                      className={styles.openProject}
-                      type="button"
-                      onClick={() => onOpenProject(job.project_id)}
-                      title="Open workspace"
-                      aria-label={`Open ${projectName}`}
-                    >
-                      <ExternalLink size={16} aria-hidden="true" />
-                    </button>
-                  ) : null}
-                  {job.status === "succeeded" ? (
-                    <div className={styles.jobActions}>
-                      <button
-                        className={styles.openProject}
-                        type="button"
-                        title="Apply generated TOC"
-                        aria-label="Apply generated TOC"
-                        onClick={() => onApplyJob(job.id)}
-                      >
-                        <Check size={16} />
-                      </button>
-                      <a
-                        className={styles.openProject}
-                        href={`/api/jobs/${job.id}/download`}
-                        title="Download generated PDF"
-                        aria-label="Download generated PDF"
-                      >
-                        <Download size={16} />
-                      </a>
-                    </div>
-                  ) : null}
-                </article>
-              );
-            })}
-          </div>
-        ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          ) : null}
+        </section>
       </section>
     </main>
   );

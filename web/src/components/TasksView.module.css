@@ -1,84 +1,172 @@
 .content {
+  grid-column: 2;
   display: grid;
   align-content: start;
-  gap: 16px;
+  gap: 24px;
+  min-width: 0;
   overflow: auto;
+  padding: 24px clamp(20px, 4vw, 56px) 52px;
 }
+
+.headerStats {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.headerStats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.headerStat svg {
+  color: var(--accent);
+}
+
+.batch,
+.taskPanel {
+  width: min(1120px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
 .batch {
   display: grid;
-  gap: 10px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
+  gap: 16px;
+  padding: 16px;
 }
-.batchHeader {
+
+.batchTop {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.batchTop h2,
+.listHeading h2 {
+  font-size: 15px;
+}
+
+.batchActions {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.providerField {
+  display: grid;
+  gap: 4px;
+  min-width: min(320px, 48vw);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.providerField select {
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.pickerHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
-.batchHeader h2 {
-  font-size: 14px;
-}
-.batchControls select {
-  min-height: 30px;
-  padding: 3px 7px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--surface-raised);
+
+.pickerHeader span {
   color: var(--text);
+  font-weight: 600;
 }
+
+.pickerHeader small,
+.projectPicker small,
+.listHeading span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .projectPicker {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 4px;
-  max-height: 150px;
+  gap: 6px;
+  max-height: 176px;
   overflow: auto;
 }
+
 .projectPicker label {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 4px 6px;
-  border-radius: 4px;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   color: var(--text-secondary);
   font-size: 12px;
+  cursor: pointer;
 }
+
 .projectPicker label:hover {
+  border-color: var(--line);
   background: var(--surface-hover);
 }
+
 .projectPicker span {
   overflow: hidden;
+  color: var(--text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.projectPicker small {
-  color: var(--text-muted);
-}
+
 .unavailable {
+  cursor: not-allowed;
   opacity: 0.55;
 }
 
-.activeCount {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-secondary);
-  font-size: 13px;
+.taskPanel {
+  display: grid;
+  overflow: hidden;
 }
 
-.activeCount svg {
-  color: var(--accent);
+.listToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-subtle);
+}
+
+.listHeading {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
 .filters {
   display: inline-flex;
-  width: fit-content;
+  flex: 0 0 auto;
   padding: 3px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: var(--surface-subtle);
+  background: var(--surface-raised);
 }
 
 .filters button {
@@ -94,64 +182,106 @@
 .filters button:hover {
   color: var(--text);
 }
+
 .filters .selected {
   color: var(--text);
-  background: var(--surface-raised);
-  box-shadow: 0 1px 2px rgb(31 35 40 / 12%);
+  background: var(--surface-hover);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .list {
   display: grid;
-  border-top: 1px solid var(--line);
 }
 
 .task {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) minmax(150px, auto) 30px auto;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(160px, max-content) auto;
   align-items: center;
-  gap: 12px;
-  min-height: 82px;
-  padding: 12px 8px;
+  gap: 16px;
+  min-height: 76px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--line);
+}
+
+.task:last-child {
+  border-bottom: 0;
+}
+
+.task:hover {
+  background: color-mix(in srgb, var(--surface-hover) 70%, transparent);
 }
 
 .status {
   display: grid;
   place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
   color: var(--text-secondary);
+  background: var(--surface-subtle);
 }
-.queued,
-.running {
+
+.status.queued,
+.status.running {
   color: var(--accent);
 }
-.succeeded {
+
+.status.succeeded {
   color: var(--success);
 }
-.failed {
+
+.status.failed {
   color: var(--danger);
 }
 
 .summary {
   display: grid;
   min-width: 0;
-  gap: 5px;
+  gap: 6px;
 }
+
 .titleRow {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
+
 .titleRow strong {
   overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
 }
-.titleRow span {
+
+.statusBadge {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
   color: var(--text-secondary);
-  font-size: 12px;
+  background: var(--surface-subtle);
+  font-size: 11px;
+  font-weight: 600;
 }
+
+.statusBadge.queued,
+.statusBadge.running {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.statusBadge.succeeded {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.statusBadge.failed {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
 .summary p {
   overflow: hidden;
   color: var(--text-secondary);
@@ -163,17 +293,21 @@
 .progress {
   height: 4px;
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: 999px;
   background: var(--surface-hover);
 }
+
 .progress span {
   display: block;
   height: 100%;
   background: var(--accent);
   transition: width 180ms ease;
 }
+
 .errorText {
   color: var(--danger) !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
 }
 
 .meta {
@@ -184,24 +318,28 @@
   font-size: 12px;
   white-space: nowrap;
 }
-.openProject {
+
+.jobActions {
+  display: inline-flex;
+  justify-content: end;
+  gap: 4px;
+}
+
+.taskAction {
   display: grid;
   place-items: center;
   width: 30px;
   height: 30px;
   padding: 0;
-  border-radius: 4px;
+  border-radius: 5px;
   color: var(--text-secondary);
   background: transparent;
   cursor: pointer;
 }
-.openProject:hover {
+
+.taskAction:hover {
   color: var(--accent);
   background: var(--accent-soft);
-}
-.jobActions {
-  display: inline-flex;
-  gap: 3px;
 }
 
 .empty {
@@ -213,19 +351,91 @@
   font-size: 13px;
   text-align: center;
 }
+
 .error {
   color: var(--danger);
 }
 
-@media (max-width: 620px) {
-  .task {
-    grid-template-columns: 24px minmax(0, 1fr) 30px;
-    gap: 8px;
+@media (max-width: 920px) {
+  .content {
+    grid-column: 1;
   }
+}
+
+@media (max-width: 720px) {
+  .headerStats {
+    align-items: end;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .batchTop,
+  .listToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .batchActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .providerField {
+    min-width: 0;
+  }
+
+  .filters {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .filters button {
+    flex: 1 0 auto;
+  }
+
+  .task {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
   .meta {
-    grid-column: 2;
+    grid-column: 2 / 4;
     justify-items: start;
     grid-template-columns: repeat(2, auto);
     justify-content: space-between;
+  }
+
+  .jobActions {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+
+@media (max-width: 520px) {
+  .content {
+    padding: 18px 16px 36px;
+  }
+
+  .headerStats span:not(.headerStat) {
+    display: none;
+  }
+
+  .projectPicker {
+    grid-template-columns: 1fr;
+  }
+
+  .task {
+    align-items: start;
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .jobActions,
+  .meta {
+    grid-column: 2;
+  }
+
+  .jobActions {
+    grid-row: auto;
+    justify-content: start;
   }
 }
