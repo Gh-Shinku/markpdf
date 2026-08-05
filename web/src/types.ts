@@ -1,9 +1,3 @@
-export type Status =
-  | { kind: "idle"; message: string }
-  | { kind: "loading"; message: string }
-  | { kind: "success"; message: string }
-  | { kind: "error"; message: string };
-
 export type ValidationIssue = {
   message: string;
 };

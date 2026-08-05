@@ -15,15 +15,13 @@ import {
 } from "lucide-react";
 import { AppNavigation } from "./AppNavigation";
 import { JsonEditor, type JsonEditorHandle } from "../JsonEditor";
-import { StatusLine } from "./StatusLine";
-import type { PreviewPdf, Project, Status } from "../types";
+import type { PreviewPdf, Project } from "../types";
 import { PdfViewer } from "./PdfViewer";
 
 type WorkspaceViewProps = {
   project: Project | null;
   tocText: string;
   pageOffset: string;
-  status: Status;
   theme: "light" | "dark";
   canUseProjectActions: boolean;
   isPreviewing: boolean;
@@ -54,7 +52,6 @@ export function WorkspaceView({
   project,
   tocText,
   pageOffset,
-  status,
   theme,
   canUseProjectActions,
   isPreviewing,
@@ -96,9 +93,6 @@ export function WorkspaceView({
           <BookMarked size={17} aria-hidden="true" />
           <span>{project?.name ?? "Loading project"}</span>
         </div>
-        {status.kind === "error" ? (
-          <div className="workspace-header-status"><StatusLine status={status} /></div>
-        ) : null}
       </header>
 
       <section className="workspace-grid" ref={workspaceRef} style={workspaceStyle}>

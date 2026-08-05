@@ -1,12 +1,10 @@
 import { useMemo, useState, type ChangeEvent, type DragEvent } from "react";
 import { Clock3, FileText, FolderOpen, Trash2, Upload } from "lucide-react";
-import type { Project, Status } from "../types";
+import type { Project } from "../types";
 import { AppNavigation } from "./AppNavigation";
-import { StatusLine } from "./StatusLine";
 
 type HomeViewProps = {
   projects: Project[];
-  status: Status;
   onCreateProject: (file: File | null) => Promise<void>;
   onCreateProjectInput: (event: ChangeEvent<HTMLInputElement>) => void;
   onOpenProject: (projectId: string) => void;
@@ -16,7 +14,6 @@ type HomeViewProps = {
 
 export function HomeView({
   projects,
-  status,
   onCreateProject,
   onCreateProjectInput,
   onOpenProject,
@@ -48,7 +45,6 @@ export function HomeView({
           <p className="eyebrow">PDF Bookmark Manager</p>
           <h1>Your library</h1>
         </div>
-        {status.kind === "error" ? <StatusLine status={status} /> : null}
       </header>
 
       <section className="home-content">

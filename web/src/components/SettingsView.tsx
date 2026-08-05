@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { ArrowLeft, Moon, Save, Sun } from "lucide-react";
-import type { ThemePreference } from "../App";
+import type { ThemePreference } from "../hooks/useThemePreference";
 import type { SettingsDraft, SettingsState } from "../types";
 import { AppNavigation } from "./AppNavigation";
 

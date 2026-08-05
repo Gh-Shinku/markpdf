@@ -315,8 +315,7 @@ button.project-row:hover {
 }
 
 .project-name strong,
-.project-name small,
-.status-pill span {
+.project-name small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -501,33 +500,6 @@ button.project-row:hover {
 
 .json-editor-shell .monaco-editor {
   height: 100%;
-}
-
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  max-width: 420px;
-  min-height: 26px;
-  padding: 3px 7px;
-  border-radius: 2px;
-  color: #3f4750;
-  background: #eef0f2;
-  border: 1px solid var(--border);
-  font-size: 12px;
-}
-
-.status-pill.success {
-  color: #24653f;
-  background: #eef7f1;
-  border-color: #bed8c8;
-}
-
-.status-pill.error {
-  color: #8a2634;
-  background: #fff1f2;
-  border-color: #e0b5bd;
 }
 
 .pdf-frame {
@@ -1061,10 +1033,6 @@ button.project-row:hover {
     flex-direction: column;
   }
 
-  .status-pill {
-    max-width: 100%;
-  }
-
   .preview-statusbar {
     width: 100%;
     justify-content: flex-start;
@@ -1145,20 +1113,6 @@ body {
   background: var(--canvas);
 }
 
-.app-navigation {
-  grid-row: 1 / -1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 58px;
-  padding: 10px 8px;
-  border-right: 1px solid var(--line);
-  background: var(--surface-subtle);
-  z-index: 10;
-}
-
-.app-mark,
-.nav-action,
 .icon-button,
 .back-button {
   display: inline-grid;
@@ -1169,33 +1123,11 @@ body {
   cursor: pointer;
 }
 
-.app-mark {
-  width: 38px;
-  height: 38px;
-  margin-bottom: 14px;
-  border-radius: 8px;
-  color: var(--accent);
-}
-
-.app-mark:hover,
-.nav-action:hover,
-.nav-action.active,
 .back-button:hover,
 .icon-button:hover {
   color: var(--accent);
   background: var(--accent-soft);
 }
-
-.navigation-actions { display: grid; gap: 5px; width: 100%; }
-.nav-action {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  margin: 0 auto;
-  border-radius: 7px;
-}
-.nav-action span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.nav-settings { margin-top: auto; }
 
 .app-header,
 .workspace-header {
@@ -1266,7 +1198,6 @@ body {
 .workspace-title { display: inline-flex; align-items: center; gap: 8px; min-width: 0; margin-left: 4px; color: var(--text); font-size: 13px; font-weight: 600; }
 .workspace-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-title svg { color: var(--accent); }
-.workspace-header-status { margin-left: auto; }
 .workspace-grid { grid-column: 2; background: var(--canvas); }
 .editor-pane, .preview-pane { background: var(--surface-raised); }
 .pane-header, .pdf-viewer-toolbar { background: var(--surface-subtle); border-color: var(--line); }
@@ -1285,10 +1216,6 @@ body {
 .primary-action:hover:not(:disabled) { background: var(--accent-strong); }
 .secondary-action:hover:not(:disabled), .upload-control:hover, .download-action:hover { background: var(--surface-hover); }
 .primary-action:disabled, .secondary-action:disabled, .danger-action:disabled { color: var(--text-secondary); border-color: var(--line); background: var(--surface-subtle); }
-.status-pill { justify-content: flex-start; color: var(--text-secondary); border-color: var(--line); background: var(--surface-subtle); border-radius: 5px; }
-.status-pill.success { color: var(--success); background: color-mix(in srgb, var(--success) 10%, var(--surface-raised)); border-color: color-mix(in srgb, var(--success) 30%, var(--line)); }
-.status-pill.error { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, var(--surface-raised)); border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
-
 :root[data-theme="dark"] .pdf-viewer,
 :root[data-theme="dark"] .pdf-frame,
 :root[data-theme="dark"] .pdf-viewer-stage { background: #1a1d24; }
@@ -1300,12 +1227,6 @@ body {
 
 @media (max-width: 920px) {
   .app-shell { grid-template-columns: 1fr; grid-template-rows: auto auto minmax(0, 1fr); }
-  .app-navigation { grid-row: 1; grid-column: 1; flex-direction: row; width: auto; height: 52px; padding: 6px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .app-mark { width: 36px; height: 36px; margin: 0 10px 0 0; }
-  .navigation-actions { display: flex; width: auto; }
-  .nav-action { width: auto; height: 36px; padding: 0 9px; }
-  .nav-action span { position: static; width: auto; height: auto; overflow: visible; clip: auto; margin-left: 6px; font-size: 12px; }
-  .nav-settings { margin: 0 0 0 auto; }
   .app-header, .workspace-header, .home-content, .settings-panel, .workspace-grid { grid-column: 1; }
   .workspace-grid { grid-row: 3; }
 }
@@ -1318,5 +1239,4 @@ body {
   .project-meta, .project-status { display: none; }
   .workspace-header { padding: 6px 8px; }
   .workspace-title { max-width: 42vw; }
-  .workspace-header-status .status-pill span { max-width: 120px; }
 }
