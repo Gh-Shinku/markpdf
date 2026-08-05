@@ -15,8 +15,11 @@ import {
 } from "lucide-react";
 import { AppNavigation } from "./AppNavigation";
 import { JsonEditor, type JsonEditorHandle } from "../JsonEditor";
-import type { PreviewPdf, Project } from "../types";
+import { PreviewSettingsMenu } from "./PreviewSettingsMenu";
+import previewStyles from "./PreviewSettingsMenu.module.css";
+import type { Project } from "../types";
 import { PdfViewer } from "./PdfViewer";
+import { makeBookmarkedFilename } from "../utils";
 
 type WorkspaceViewProps = {
   project: Project | null;
@@ -26,7 +29,6 @@ type WorkspaceViewProps = {
   canUseProjectActions: boolean;
   isPreviewing: boolean;
   isGenerating: boolean;
-  previewPdf: PreviewPdf | null;
   pdfVersion: number;
   isResizing: boolean;
   workspaceStyle: CSSProperties;
@@ -56,7 +58,6 @@ export function WorkspaceView({
   canUseProjectActions,
   isPreviewing,
   isGenerating,
-  previewPdf,
   pdfVersion,
   isResizing,
   workspaceStyle,
@@ -77,9 +78,7 @@ export function WorkspaceView({
   onSplitterPointerUp,
   onSplitterPointerCancel
 }: WorkspaceViewProps) {
-  const pdfFrameSrc = project
-    ? previewPdf?.url ?? `/api/projects/${project.id}/pdf?v=${pdfVersion}`
-    : "";
+  const pdfFrameSrc = project ? `/api/projects/${project.id}/pdf?v=${pdfVersion}` : "";
 
   return (
     <main className={`app-shell${isResizing ? " resizing" : ""}`}>
@@ -138,34 +137,27 @@ export function WorkspaceView({
                 source={pdfFrameSrc}
                 toolbarStart={(
                   <div className="pdf-meta-leading">
-                    <button
-                      className="primary-action"
-                      type="button"
-                      disabled={!canUseProjectActions}
-                      onClick={onApplyPreview}
-                    >
-                      {isPreviewing ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
-                      Preview
-                    </button>
-                  </div>
-                )}
-                toolbarControlsExtra={(
-                  <label className="offset-control">
-                    <span>Offset</span>
-                    <input
-                      type="number"
-                      step="1"
-                      value={pageOffset}
-                      onChange={(event) => onPageOffsetChange(event.target.value)}
-                    />
-                  </label>
-                )}
-                toolbarEnd={(
-                  <div className="preview-statusbar">
-                    {previewPdf ? (
-                      <a className="download-action" href={previewPdf.url} download={previewPdf.filename}>
+                    <div className={previewStyles.actionGroup}>
+                      <button
+                        className={`primary-action ${previewStyles.previewButton}`}
+                        type="button"
+                        disabled={!canUseProjectActions}
+                        onClick={onApplyPreview}
+                      >
+                        {isPreviewing ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
+                        Preview
+                      </button>
+                      <PreviewSettingsMenu pageOffset={pageOffset} onPageOffsetChange={onPageOffsetChange} />
+                    </div>
+                    {project ? (
+                      <a
+                        className={`secondary-action icon-only ${previewStyles.downloadButton}`}
+                        href={pdfFrameSrc}
+                        download={makeBookmarkedFilename(project)}
+                        aria-label="Download PDF"
+                        title="Download PDF"
+                      >
                         <Download size={16} />
-                        Download
                       </a>
                     ) : null}
                   </div>

@@ -481,15 +481,6 @@ button.project-row:hover {
   min-width: 0;
 }
 
-.preview-statusbar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
 .json-editor-shell {
   width: 100%;
   min-width: 0;
@@ -1031,11 +1022,6 @@ button.project-row:hover {
   .manager-header {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .preview-statusbar {
-    width: 100%;
-    justify-content: flex-start;
   }
 
   .project-row {

@@ -23,6 +23,10 @@ DEFAULT_TOC = [
     }
 ]
 
+DOCUMENT_FILENAME = "document.pdf"
+LEGACY_SOURCE_FILENAME = "source.pdf"
+LEGACY_OUTPUT_FILENAME = "output.pdf"
+
 
 def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -85,11 +89,12 @@ class ProjectStore:
         project_dir = self.projects_dir / project_id
         project_dir.mkdir(parents=True, exist_ok=False)
 
-        (project_dir / "source.pdf").write_bytes(pdf_bytes)
+        document_path = project_dir / DOCUMENT_FILENAME
+        document_path.write_bytes(pdf_bytes)
         toc_text = self._initial_toc_text(toc_bytes)
         (project_dir / "toc.json").write_text(toc_text, encoding="utf-8")
 
-        page_count = self._pdf_page_count(project_dir / "source.pdf")
+        page_count = self._pdf_page_count(document_path)
         now = utc_now_iso()
         metadata = {
             "id": project_id,
@@ -162,13 +167,32 @@ class ProjectStore:
         return metadata
 
     def pdf_path(self, project_id: str) -> Path:
-        return self._project_dir(project_id) / "source.pdf"
+        project_dir = self._project_dir(project_id)
+        document_path = project_dir / DOCUMENT_FILENAME
+        legacy_paths = [
+            project_dir / LEGACY_SOURCE_FILENAME,
+            project_dir / LEGACY_OUTPUT_FILENAME,
+        ]
+
+        if document_path.exists():
+            for legacy_path in legacy_paths:
+                legacy_path.unlink(missing_ok=True)
+            return document_path
+
+        legacy_document = next(
+            (path for path in reversed(legacy_paths) if path.exists()),
+            None,
+        )
+        if legacy_document is None:
+            raise KeyError(project_id)
+
+        legacy_document.replace(document_path)
+        for legacy_path in legacy_paths:
+            legacy_path.unlink(missing_ok=True)
+        return document_path
 
     def toc_path(self, project_id: str) -> Path:
         return self._project_dir(project_id) / "toc.json"
-
-    def output_path(self, project_id: str) -> Path:
-        return self._project_dir(project_id) / "output.pdf"
 
     def cache_dir(self) -> Path:
         path = self.root / "cache"

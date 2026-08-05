@@ -163,17 +163,25 @@ export function PdfViewer({
         setPdfDocument(pdf);
         setLoadState({ kind: "loading", message: "Reading page metadata" });
 
-        const [nextSizes, nextOutline] = await Promise.all([
-          loadPageSizes(pdf, () => cancelled),
-          pdf.getOutline().then((items) => (items ?? []) as PdfOutlineItem[]),
-        ]);
+        const outlinePromise = pdf
+          .getOutline()
+          .then((items) => (items ?? []) as PdfOutlineItem[])
+          .catch(() => [] as PdfOutlineItem[]);
+
+        void outlinePromise.then((nextOutline) => {
+          if (cancelled) {
+            return;
+          }
+          setOutline(nextOutline);
+        });
+
+        const nextSizes = await loadPageSizes(pdf, () => cancelled);
 
         if (cancelled) {
           return;
         }
 
         setPageSizes(nextSizes);
-        setOutline(nextOutline);
         setLoadState({ kind: "ready" });
       })
       .catch((error: unknown) => {

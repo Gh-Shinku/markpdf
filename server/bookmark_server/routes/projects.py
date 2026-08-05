@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -51,11 +52,6 @@ def _project_or_404(project_id: str) -> dict[str, Any]:
         return store.get_project(project_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Project not found") from exc
-
-
-def _safe_output_name(pdf_filename: str | None) -> str:
-    stem = (pdf_filename or "bookmarked").rsplit(".", 1)[0] or "bookmarked"
-    return f"{stem}_bookmarked.pdf"
 
 
 def _run_generate_toc_job(
@@ -196,17 +192,24 @@ def apply_project_toc(project_id: str, payload: ApplyPayload) -> FileResponse:
         detail = validation.issues[0].message if validation.issues else "Invalid TOC JSON"
         raise HTTPException(status_code=400, detail=detail)
 
-    output_pdf = store.output_path(project_id)
-    apply_toc_to_pdf(
-        input_pdf=store.pdf_path(project_id),
-        output_pdf=output_pdf,
-        toc_data=validation.normalized_toc,
-        page_offset=payload.page_offset,
-    )
+    document_pdf = store.pdf_path(project_id)
+    temporary_pdf = document_pdf.with_name(f".{document_pdf.stem}.{uuid4().hex}.pdf")
+    try:
+        apply_toc_to_pdf(
+            input_pdf=document_pdf,
+            output_pdf=temporary_pdf,
+            toc_data=validation.normalized_toc,
+            page_offset=payload.page_offset,
+        )
+        temporary_pdf.replace(document_pdf)
+    except Exception as exc:
+        temporary_pdf.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Failed to apply TOC to PDF") from exc
+
     return FileResponse(
-        output_pdf,
+        document_pdf,
         media_type="application/pdf",
-        filename=_safe_output_name(project.get("pdf_filename")),
+        filename=project.get("pdf_filename") or "source.pdf",
     )
 
 

@@ -1,5 +1,5 @@
 import { parseError, requestJson } from "../../api";
-import type { GenerationJob, Project, PreviewPdf } from "../../types";
+import type { GenerationJob, Project } from "../../types";
 
 export const projectKeys = {
   all: ["projects"] as const,
@@ -54,7 +54,7 @@ export async function saveProjectOffset(projectId: string, pageOffset: number): 
   return data.project;
 }
 
-export async function applyProject(projectId: string, tocJson: string, pageOffset: number): Promise<PreviewPdf> {
+export async function applyProject(projectId: string, tocJson: string, pageOffset: number): Promise<void> {
   const response = await fetch(`/api/projects/${projectId}/apply`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -63,8 +63,7 @@ export async function applyProject(projectId: string, tocJson: string, pageOffse
   if (!response.ok) {
     throw new Error(await parseError(response));
   }
-  const blob = await response.blob();
-  return { url: URL.createObjectURL(blob), filename: "bookmarked.pdf" };
+  await response.blob();
 }
 
 export async function generateProjectToc(projectId: string, tocStart: number, tocEnd: number): Promise<GenerationJob> {

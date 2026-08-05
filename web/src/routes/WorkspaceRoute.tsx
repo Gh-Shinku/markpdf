@@ -17,7 +17,6 @@ import {
   saveProjectOffset,
   saveProjectToc
 } from "../features/projects/api";
-import { makeBookmarkedFilename } from "../utils";
 
 export function WorkspaceRoute() {
   const { projectId = "" } = useParams();
@@ -31,7 +30,7 @@ export function WorkspaceRoute() {
   const tocQuery = useQuery({ queryKey: projectKeys.toc(projectId), queryFn: () => getProjectToc(projectId), enabled: Boolean(projectId) });
   const [tocText, setTocText] = useState("");
   const [pageOffset, setPageOffset] = useState("0");
-  const [previewPdf, setPreviewPdf] = useState<{ url: string; filename: string } | null>(null);
+  const [pdfVersion, setPdfVersion] = useState(0);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [tocStart, setTocStart] = useState("1");
@@ -77,6 +76,10 @@ export function WorkspaceRoute() {
   }, [projectId, projectQuery.data, tocQuery.data]);
 
   useEffect(() => {
+    setPdfVersion(0);
+  }, [projectId]);
+
+  useEffect(() => {
     if (!projectId || !projectQuery.data || tocText === savedTocRef.current) return;
     const sequence = tocSaveSequenceRef.current + 1;
     tocSaveSequenceRef.current = sequence;
@@ -93,10 +96,6 @@ export function WorkspaceRoute() {
     const timer = window.setTimeout(() => offsetMutation.mutate({ value, sequence }), 500);
     return () => window.clearTimeout(timer);
   }, [pageOffset, projectId, projectQuery.data]);
-
-  useEffect(() => () => {
-    if (previewPdf) URL.revokeObjectURL(previewPdf.url);
-  }, [previewPdf]);
 
   useEffect(() => {
     function openFind(event: KeyboardEvent) {
@@ -130,10 +129,6 @@ export function WorkspaceRoute() {
       queryClient.invalidateQueries({ queryKey: projectKeys.toc(projectId) }),
       queryClient.invalidateQueries({ queryKey: projectKeys.all })
     ]);
-    setPreviewPdf((current) => {
-      if (current) URL.revokeObjectURL(current.url);
-      return null;
-    });
   }, [jobQuery.data, projectId, queryClient]);
 
   async function flushAutosave() {
@@ -160,11 +155,8 @@ export function WorkspaceRoute() {
     setIsPreviewing(true);
     try {
       const offset = await flushAutosave();
-      const result = await applyProject(project.id, tocText, offset);
-      setPreviewPdf((current) => {
-        if (current) URL.revokeObjectURL(current.url);
-        return { ...result, filename: makeBookmarkedFilename(project) };
-      });
+      await applyProject(project.id, tocText, offset);
+      setPdfVersion((version) => version + 1);
       toast.success("Preview PDF updated");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to apply TOC");
@@ -189,8 +181,7 @@ export function WorkspaceRoute() {
         canUseProjectActions={canUseProjectActions}
         isPreviewing={isPreviewing}
         isGenerating={Boolean(generationJobId)}
-        previewPdf={previewPdf}
-        pdfVersion={projectQuery.data.updated_at.length}
+        pdfVersion={pdfVersion}
         isResizing={isResizing}
         workspaceStyle={workspaceStyle}
         workspaceRef={workspaceRef}

@@ -36,11 +36,6 @@ export type SettingsDraft = {
   apiKey: string;
 };
 
-export type PreviewPdf = {
-  url: string;
-  filename: string;
-};
-
 export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed";
 
 export type GenerationJob = {

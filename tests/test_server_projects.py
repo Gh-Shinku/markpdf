@@ -47,7 +47,7 @@ def _create_project(tmp_path: Path, page_count: int = 4) -> dict[str, Any]:
     return response.json()["project"]
 
 
-def test_create_list_and_read_project_toc(tmp_path) -> None:
+def test_create_list_and_read_project_toc(tmp_path, isolated_project_store) -> None:
     project = _create_project(tmp_path)
 
     list_response = client.get("/api/projects")
@@ -62,9 +62,11 @@ def test_create_list_and_read_project_toc(tmp_path) -> None:
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"] == "application/pdf"
     assert pdf_response.headers["content-disposition"].startswith("inline;")
+    assert isolated_project_store.pdf_path(project["id"]).name == "document.pdf"
+    assert [path.name for path in isolated_project_store.pdf_path(project["id"]).parent.glob("*.pdf")] == ["document.pdf"]
 
 
-def test_project_validate_and_apply(tmp_path) -> None:
+def test_project_validate_and_apply(tmp_path, isolated_project_store) -> None:
     project = _create_project(tmp_path, page_count=4)
     toc_text = json.dumps(
         [
@@ -91,6 +93,56 @@ def test_project_validate_and_apply(tmp_path) -> None:
     output_pdf.write_bytes(apply_response.content)
     with fitz.open(output_pdf) as doc:
         assert doc.get_toc() == [[1, "Contents", 1], [1, "Chapter 1", 2]]
+
+    persisted_response = client.get(f"/api/projects/{project['id']}/pdf")
+    assert persisted_response.status_code == 200
+    assert persisted_response.content == apply_response.content
+    assert [path.name for path in isolated_project_store.pdf_path(project["id"]).parent.glob("*.pdf")] == ["document.pdf"]
+
+
+def test_project_pdf_migrates_legacy_output_and_removes_legacy_files(tmp_path, isolated_project_store) -> None:
+    project_dir = isolated_project_store.projects_dir / "legacy-project"
+    project_dir.mkdir(parents=True)
+    source_pdf = project_dir / "source.pdf"
+    output_pdf = project_dir / "output.pdf"
+    _make_pdf(source_pdf, page_count=1)
+    _make_pdf(output_pdf, page_count=2)
+    expected_pdf = output_pdf.read_bytes()
+
+    migrated_pdf = isolated_project_store.pdf_path("legacy-project")
+
+    assert migrated_pdf.name == "document.pdf"
+    assert migrated_pdf.read_bytes() == expected_pdf
+    assert not source_pdf.exists()
+    assert not output_pdf.exists()
+
+
+def test_project_apply_failure_keeps_last_successful_pdf(tmp_path, isolated_project_store, monkeypatch) -> None:
+    project = _create_project(tmp_path, page_count=2)
+    toc_text = json.dumps([{"title": "Chapter 1", "page": 1, "attribute": "absolute", "children": []}])
+
+    success_response = client.post(
+        f"/api/projects/{project['id']}/apply",
+        json={"toc_json": toc_text, "page_offset": 0},
+    )
+    assert success_response.status_code == 200
+    last_successful_pdf = success_response.content
+
+    def fail_apply(**kwargs):
+        Path(kwargs["output_pdf"]).write_bytes(b"partial PDF")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(projects_route, "apply_toc_to_pdf", fail_apply)
+    failure_response = client.post(
+        f"/api/projects/{project['id']}/apply",
+        json={"toc_json": toc_text, "page_offset": 0},
+    )
+
+    assert failure_response.status_code == 500
+    assert failure_response.json()["detail"] == "Failed to apply TOC to PDF"
+    persisted_response = client.get(f"/api/projects/{project['id']}/pdf")
+    assert persisted_response.content == last_successful_pdf
+    assert list(isolated_project_store.pdf_path(project["id"]).parent.glob(".*.pdf")) == []
 
 
 def test_project_metadata_persists_page_offset(tmp_path) -> None:
