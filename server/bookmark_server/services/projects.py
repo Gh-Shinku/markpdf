@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import fitz
 
-from bookmark.core import flatten_to_pymupdf_toc, parse_toc_items, validate_toc_json_structure
+from ..core import flatten_to_pymupdf_toc, parse_toc_items, validate_toc_json_structure
 
 
 DEFAULT_TOC = [

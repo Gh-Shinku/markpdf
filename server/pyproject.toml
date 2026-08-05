@@ -1,5 +1,5 @@
 [project]
-name = "bookmark"
+name = "bookmark-server"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -17,21 +17,14 @@ dev = [
     "pytest>=8.0.0",
 ]
 
-[project.scripts]
-pdf-bookmark = "bookmark.cli:main"
-
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-
 [tool.setuptools.packages.find]
-where = ["src"]
+include = ["bookmark_server*"]
 
 [tool.pytest.ini_options]
 pythonpath = [
     ".",
-    "src",
 ]

@@ -8,11 +8,10 @@ from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from bookmark.core import apply_toc_to_pdf
-from bookmark.extractor import extract_toc_json
-
+from ..core import apply_toc_to_pdf
 from ..services.generation_jobs import generation_job_store
 from ..services.projects import store
+from ..services.toc_extraction import extract_toc_json
 
 
 router = APIRouter(tags=["projects"])

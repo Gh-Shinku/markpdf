@@ -12,7 +12,7 @@ from typing import Any, Callable
 import fitz
 from openai import OpenAI
 
-from .core import validate_toc_json_structure
+from ..core import validate_toc_json_structure
 
 
 FlatPageEventCallback = Callable[

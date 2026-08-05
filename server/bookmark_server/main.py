@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from .routes import apply, projects
+from .routes import projects
 
 
 app = FastAPI(title="PDF Bookmark Server")
-app.include_router(apply.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 
 

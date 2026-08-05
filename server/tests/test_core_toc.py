@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from bookmark.core import flatten_to_pymupdf_toc, parse_toc_items, validate_toc_json_structure
+from bookmark_server.core import flatten_to_pymupdf_toc, parse_toc_items, validate_toc_json_structure
 
 
 def test_validate_toc_json_structure_normalizes_nested_items() -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import fitz
 
-from bookmark.core import apply_toc_to_pdf
+from bookmark_server.core import apply_toc_to_pdf
 
 
 def test_apply_toc_to_pdf_writes_bookmarks(tmp_path) -> None:

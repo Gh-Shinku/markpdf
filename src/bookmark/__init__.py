@@ -1,1 +1,0 @@
-"""PDF bookmark generator package."""

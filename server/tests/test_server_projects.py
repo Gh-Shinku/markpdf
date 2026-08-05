@@ -8,10 +8,10 @@ import fitz
 import pytest
 from fastapi.testclient import TestClient
 
-from server.bookmark_server.main import app
-from server.bookmark_server.routes import projects as projects_route
-from server.bookmark_server.services.generation_jobs import GenerationJobStore
-from server.bookmark_server.services.projects import ProjectStore
+from bookmark_server.main import app
+from bookmark_server.routes import projects as projects_route
+from bookmark_server.services.generation_jobs import GenerationJobStore
+from bookmark_server.services.projects import ProjectStore
 
 
 client = TestClient(app)
