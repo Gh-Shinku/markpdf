@@ -1,20 +1,24 @@
 from __future__ import annotations
 
 import json
+import base64
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
+import fitz
 
 from ..core import apply_toc_to_pdf
 from ..services.generation_jobs import generation_job_store
 from ..services.projects import store
-from ..services.toc_extraction import extract_toc_json
+from ..services.toc_extraction import extract_toc_json, request_toc_from_vlm
 
 
 router = APIRouter(tags=["projects"])
+generation_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="toc-generation")
 
 
 class TocPayload(BaseModel):
@@ -38,6 +42,7 @@ class ApplyPayload(BaseModel):
 class GeneratePayload(BaseModel):
     toc_start: int
     toc_end: int
+    provider_id: str
 
 
 class LlmSettingsPayload(BaseModel):
@@ -46,11 +51,55 @@ class LlmSettingsPayload(BaseModel):
     api_key: str | None = None
 
 
+class ProviderPayload(BaseModel):
+    id: str | None = None
+    name: str
+    base_url: str
+    model: str
+    api_key: str | None = None
+
+
+class ProvidersPayload(BaseModel):
+    providers: list[ProviderPayload]
+
+
+class TocFileApplyPayload(BaseModel):
+    page_offset: int = 0
+
+
 def _project_or_404(project_id: str) -> dict[str, Any]:
     try:
         return store.get_project(project_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Project not found") from exc
+
+
+def _provider_or_400(provider_id: str) -> dict[str, Any]:
+    try:
+        provider = store.get_llm_provider(provider_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail="Selected VLM API was not found") from exc
+    if provider.get("verification_status") != "verified":
+        raise HTTPException(status_code=400, detail="Selected VLM API has not passed the vision test")
+    if not str(provider.get("api_key") or ""):
+        raise HTTPException(status_code=400, detail="Selected VLM API does not have an API key")
+    return provider
+
+
+def _provider_snapshot(provider: dict[str, Any]) -> dict[str, str]:
+    return {key: str(provider.get(key) or "") for key in ("id", "name", "base_url", "model")}
+
+
+def _validate_generation(project: dict[str, Any], payload: GeneratePayload) -> dict[str, Any]:
+    if payload.toc_start < 1 or payload.toc_end < 1:
+        raise HTTPException(status_code=400, detail="TOC page range must be one-based and >= 1")
+    if payload.toc_start > payload.toc_end:
+        raise HTTPException(status_code=400, detail="TOC start page must be <= TOC end page")
+    if payload.toc_end > int(project.get("page_count") or 0):
+        raise HTTPException(status_code=400, detail="TOC end page exceeds PDF page count")
+    if generation_job_store.find_active_job(str(project["id"])) is not None:
+        raise HTTPException(status_code=409, detail="TOC generation is already running for this project")
+    return _provider_or_400(payload.provider_id)
 
 
 def _run_generate_toc_job(
@@ -117,12 +166,13 @@ def _run_generate_toc_job(
             total_pages=total_pages,
         )
         toc_text = json.dumps(toc_data, ensure_ascii=False, indent=2)
-        metadata = store.save_toc_text(project_id, toc_text, generated=True)
+        toc_file = store.create_generated_toc_file(project_id, job_id, toc_text, _provider_snapshot(settings))
         generation_job_store.mark_succeeded(
             job_id,
-            "Generated TOC replaced the project JSON",
+            "Generated a TOC candidate",
             {
-                "project": metadata,
+                "project": store.get_project(project_id),
+                "toc_file": toc_file,
                 "stats": stats,
             },
         )
@@ -255,6 +305,39 @@ def apply_project_toc(project_id: str, payload: ApplyPayload) -> FileResponse:
     )
 
 
+@router.get("/projects/{project_id}/toc-files")
+def list_project_toc_files(project_id: str) -> dict[str, Any]:
+    _project_or_404(project_id)
+    return {"toc_files": store.list_toc_files(project_id)}
+
+
+@router.get("/projects/{project_id}/toc-files/{toc_file_id}")
+def get_project_toc_file(project_id: str, toc_file_id: str) -> dict[str, Any]:
+    _project_or_404(project_id)
+    try:
+        return {"toc_json": store.read_toc_file(project_id, toc_file_id)}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="TOC file not found") from exc
+
+
+@router.put("/projects/{project_id}/toc-files/{toc_file_id}")
+def save_project_toc_file(project_id: str, toc_file_id: str, payload: TocPayload) -> dict[str, Any]:
+    try:
+        metadata = store.save_toc_file(project_id, toc_file_id, payload.toc_json)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="TOC file not found") from exc
+    return {"project": metadata, "toc_json": payload.toc_json}
+
+
+@router.post("/projects/{project_id}/toc-files/{toc_file_id}/apply")
+def apply_project_toc_file(project_id: str, toc_file_id: str, payload: TocFileApplyPayload) -> FileResponse:
+    try:
+        toc_text = store.read_toc_file(project_id, toc_file_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="TOC file not found") from exc
+    return apply_project_toc(project_id, ApplyPayload(toc_json=toc_text, page_offset=payload.page_offset))
+
+
 @router.post("/projects/{project_id}/generate-toc")
 def generate_project_toc(
     project_id: str,
@@ -262,29 +345,41 @@ def generate_project_toc(
     background_tasks: BackgroundTasks,
 ) -> dict[str, Any]:
     project = _project_or_404(project_id)
-    if payload.toc_start < 1 or payload.toc_end < 1:
-        raise HTTPException(status_code=400, detail="TOC page range must be one-based and >= 1")
-    if payload.toc_start > payload.toc_end:
-        raise HTTPException(status_code=400, detail="TOC start page must be <= TOC end page")
-    if payload.toc_end > int(project.get("page_count") or 0):
-        raise HTTPException(status_code=400, detail="TOC end page exceeds PDF page count")
-
-    settings = store.read_llm_settings()
-    api_key = str(settings.get("api_key") or "")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="LLM API key is not configured")
-
-    active_job = generation_job_store.find_active_job(project_id)
-    if active_job is not None:
-        raise HTTPException(status_code=409, detail="TOC generation is already running for this project")
+    settings = _validate_generation(project, payload)
 
     job = generation_job_store.create_job(
         project_id=project_id,
         toc_start=payload.toc_start,
         toc_end=payload.toc_end,
+        provider=_provider_snapshot(settings),
     )
     background_tasks.add_task(_run_generate_toc_job, job["id"], project_id, payload, settings)
     return {"job": job}
+
+
+@router.post("/generation-jobs/batch")
+def generate_toc_batch(payload: dict[str, Any], background_tasks: BackgroundTasks) -> dict[str, Any]:
+    requests = payload.get("requests")
+    if not isinstance(requests, list) or not requests:
+        raise HTTPException(status_code=400, detail="Select at least one project")
+    prepared: list[tuple[str, GeneratePayload, dict[str, Any]]] = []
+    project_ids: set[str] = set()
+    for item in requests:
+        try:
+            request = GeneratePayload.model_validate(item)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid generation request") from exc
+        project_id = str(item.get("project_id") or "")
+        if not project_id or project_id in project_ids:
+            raise HTTPException(status_code=400, detail="Each project can be selected once")
+        project_ids.add(project_id)
+        prepared.append((project_id, request, _validate_generation(_project_or_404(project_id), request)))
+    jobs = []
+    for project_id, request, settings in prepared:
+        job = generation_job_store.create_job(project_id, request.toc_start, request.toc_end, _provider_snapshot(settings))
+        generation_executor.submit(_run_generate_toc_job, job["id"], project_id, request, settings)
+        jobs.append(job)
+    return {"jobs": jobs}
 
 
 @router.get("/projects/{project_id}/generation-jobs")
@@ -313,6 +408,40 @@ def get_generation_job(job_id: str) -> dict[str, Any]:
     return {"job": job}
 
 
+@router.post("/jobs/{job_id}/apply")
+def apply_generation_job(job_id: str) -> FileResponse:
+    try:
+        job = generation_job_store.get_job(job_id)
+        toc_file = (job.get("result") or {}).get("toc_file") or {}
+        toc_file_id = str(toc_file["id"])
+    except (KeyError, TypeError) as exc:
+        raise HTTPException(status_code=404, detail="Generated TOC candidate not found") from exc
+    project = _project_or_404(str(job["project_id"]))
+    return apply_project_toc_file(str(job["project_id"]), toc_file_id, TocFileApplyPayload(page_offset=int(project.get("page_offset") or 0)))
+
+
+@router.get("/jobs/{job_id}/download")
+def download_generation_job(job_id: str) -> Response:
+    try:
+        job = generation_job_store.get_job(job_id)
+        toc_file = (job.get("result") or {}).get("toc_file") or {}
+        toc_text = store.read_toc_file(str(job["project_id"]), str(toc_file["id"]))
+    except (KeyError, TypeError) as exc:
+        raise HTTPException(status_code=404, detail="Generated TOC candidate not found") from exc
+    project = _project_or_404(str(job["project_id"]))
+    validation = store.validate_toc(str(job["project_id"]), toc_text, int(project.get("page_offset") or 0))
+    if not validation.valid or validation.normalized_toc is None:
+        raise HTTPException(status_code=400, detail="Generated TOC candidate is invalid")
+    document_pdf = store.pdf_path(str(job["project_id"]))
+    temporary_pdf = document_pdf.with_name(f".{document_pdf.stem}.{uuid4().hex}.pdf")
+    try:
+        apply_toc_to_pdf(document_pdf, temporary_pdf, validation.normalized_toc, int(project.get("page_offset") or 0))
+        content = temporary_pdf.read_bytes()
+    finally:
+        temporary_pdf.unlink(missing_ok=True)
+    return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{project.get("pdf_filename") or "bookmarked.pdf"}'})
+
+
 @router.get("/settings/llm")
 def get_llm_settings() -> dict[str, Any]:
     return {"settings": store.public_llm_settings()}
@@ -324,3 +453,37 @@ def save_llm_settings(payload: LlmSettingsPayload) -> dict[str, Any]:
     public = store.public_llm_settings()
     public["has_api_key"] = bool(settings.get("api_key"))
     return {"settings": public}
+
+
+@router.get("/settings/providers")
+def get_llm_providers() -> dict[str, Any]:
+    return {"providers": store.public_llm_providers()}
+
+
+@router.put("/settings/providers")
+def save_llm_providers(payload: ProvidersPayload) -> dict[str, Any]:
+    try:
+        providers = store.save_llm_providers([item.model_dump(exclude_none=True) for item in payload.providers])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"providers": [store._public_provider(item) for item in providers]}
+
+
+@router.post("/settings/providers/{provider_id}/test")
+def test_llm_provider(provider_id: str) -> dict[str, Any]:
+    try:
+        provider = store.get_llm_provider(provider_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="VLM API not found") from exc
+    if not str(provider.get("api_key") or ""):
+        raise HTTPException(status_code=400, detail="Configure an API key before testing")
+    try:
+        pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 128, 64), False)
+        pixmap.clear_with(0x21A366)
+        image_url = f"data:image/png;base64,{base64.b64encode(pixmap.tobytes('png')).decode('ascii')}"
+        response = request_toc_from_vlm([image_url], "Confirm that you can process the attached image. Reply with exactly VLM_OK.", str(provider["api_key"]), str(provider["base_url"]), str(provider["model"]))
+        if "VLM_OK" not in response.upper():
+            raise ValueError("The model did not return the expected visual test response")
+    except Exception as exc:
+        return {"provider": store.record_provider_verification(provider_id, "failed", str(exc))}
+    return {"provider": store.record_provider_verification(provider_id, "verified", "Vision test passed")}

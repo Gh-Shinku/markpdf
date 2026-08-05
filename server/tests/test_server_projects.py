@@ -207,16 +207,17 @@ def test_llm_settings_are_saved_and_redacted() -> None:
     assert settings["api_key_hint"] == "sk-1...7890"
 
 
-def test_generate_toc_overwrites_saved_json(tmp_path, monkeypatch) -> None:
+def _save_verified_provider() -> str:
+    response = client.put("/api/settings/providers", json={"providers": [{"name": "Test VLM", "base_url": "https://example.test/v1", "model": "model-a", "api_key": "secret"}]})
+    assert response.status_code == 200
+    provider_id = response.json()["providers"][0]["id"]
+    projects_route.store.record_provider_verification(provider_id, "verified", "Vision test passed")
+    return provider_id
+
+
+def test_generate_toc_creates_candidate_file(tmp_path, monkeypatch) -> None:
     project = _create_project(tmp_path, page_count=3)
-    client.put(
-        "/api/settings/llm",
-        json={
-            "base_url": "https://example.test/v1",
-            "model": "model-a",
-            "api_key": "secret",
-        },
-    )
+    provider_id = _save_verified_provider()
 
     def fake_extract_toc_json(**kwargs):
         assert kwargs["toc_start"] == 0
@@ -234,7 +235,7 @@ def test_generate_toc_overwrites_saved_json(tmp_path, monkeypatch) -> None:
 
     response = client.post(
         f"/api/projects/{project['id']}/generate-toc",
-        json={"toc_start": 1, "toc_end": 2},
+        json={"toc_start": 1, "toc_end": 2, "provider_id": provider_id},
     )
 
     assert response.status_code == 200
@@ -247,22 +248,17 @@ def test_generate_toc_overwrites_saved_json(tmp_path, monkeypatch) -> None:
     assert job["progress"]["phase"] == "completed"
     assert job["progress"]["completed_pages"] == 2
     assert job["progress"]["total_pages"] == 2
-    assert job["result"]["project"]["generated_at"] is not None
+    assert job["result"]["toc_file"]["kind"] == "generated"
     saved_toc = client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"]
-    assert json.loads(saved_toc)[0]["title"] == "Generated"
+    assert json.loads(saved_toc)[0]["title"] == "Contents"
+    candidate = client.get(f"/api/projects/{project['id']}/toc-files/{job['result']['toc_file']['id']}")
+    assert json.loads(candidate.json()["toc_json"])[0]["title"] == "Generated"
 
 
 def test_generate_failure_preserves_saved_json(tmp_path, monkeypatch) -> None:
     project = _create_project(tmp_path, page_count=3)
     original_toc = client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"]
-    client.put(
-        "/api/settings/llm",
-        json={
-            "base_url": "https://example.test/v1",
-            "model": "model-a",
-            "api_key": "secret",
-        },
-    )
+    provider_id = _save_verified_provider()
 
     def fake_extract_toc_json(**kwargs):
         raise ValueError("VLM rejected the image")
@@ -271,7 +267,7 @@ def test_generate_failure_preserves_saved_json(tmp_path, monkeypatch) -> None:
 
     response = client.post(
         f"/api/projects/{project['id']}/generate-toc",
-        json={"toc_start": 1, "toc_end": 1},
+        json={"toc_start": 1, "toc_end": 1, "provider_id": provider_id},
     )
 
     assert response.status_code == 200
@@ -288,23 +284,16 @@ def test_generate_requires_api_key(tmp_path) -> None:
 
     response = client.post(
         f"/api/projects/{project['id']}/generate-toc",
-        json={"toc_start": 1, "toc_end": 1},
+        json={"toc_start": 1, "toc_end": 1, "provider_id": "default"},
     )
 
     assert response.status_code == 400
-    assert "API key" in response.json()["detail"]
+    assert "vision test" in response.json()["detail"]
 
 
 def test_generation_job_persists_on_disk(tmp_path, isolated_project_store, monkeypatch) -> None:
     project = _create_project(tmp_path, page_count=3)
-    client.put(
-        "/api/settings/llm",
-        json={
-            "base_url": "https://example.test/v1",
-            "model": "model-a",
-            "api_key": "secret",
-        },
-    )
+    provider_id = _save_verified_provider()
 
     def fake_extract_toc_json(**kwargs):
         return (
@@ -319,7 +308,7 @@ def test_generation_job_persists_on_disk(tmp_path, isolated_project_store, monke
 
     response = client.post(
         f"/api/projects/{project['id']}/generate-toc",
-        json={"toc_start": 1, "toc_end": 1},
+        json={"toc_start": 1, "toc_end": 1, "provider_id": provider_id},
     )
 
     job_id = response.json()["job"]["id"]
@@ -378,15 +367,12 @@ def test_global_generation_jobs_list_sorts_and_filters_status(tmp_path, isolated
 
 def test_generation_rejects_second_active_job(tmp_path) -> None:
     project = _create_project(tmp_path, page_count=3)
-    client.put(
-        "/api/settings/llm",
-        json={"base_url": "https://example.test/v1", "model": "model-a", "api_key": "secret"},
-    )
+    provider_id = _save_verified_provider()
     projects_route.generation_job_store.create_job(project["id"], toc_start=1, toc_end=1)
 
     response = client.post(
         f"/api/projects/{project['id']}/generate-toc",
-        json={"toc_start": 1, "toc_end": 1},
+        json={"toc_start": 1, "toc_end": 1, "provider_id": provider_id},
     )
 
     assert response.status_code == 409

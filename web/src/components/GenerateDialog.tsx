@@ -1,12 +1,15 @@
 import { Wand2, X } from "lucide-react";
-import type { Project } from "../types";
+import type { Project, VlmProvider } from "../types";
 
 type GenerateDialogProps = {
   project: Project;
   tocStart: string;
   tocEnd: string;
+  providers: VlmProvider[];
+  providerId: string;
   onTocStartChange: (value: string) => void;
   onTocEndChange: (value: string) => void;
+  onProviderChange: (value: string) => void;
   onCancel: () => void;
   onGenerate: () => void;
 };
@@ -15,8 +18,11 @@ export function GenerateDialog({
   project,
   tocStart,
   tocEnd,
+  providers,
+  providerId,
   onTocStartChange,
   onTocEndChange,
+  onProviderChange,
   onCancel,
   onGenerate
 }: GenerateDialogProps) {
@@ -33,6 +39,12 @@ export function GenerateDialog({
           The generated result will overwrite the saved JSON for this project.
         </p>
         <div className="range-grid">
+          <label>
+            <span>VLM API</span>
+            <select value={providerId} onChange={(event) => onProviderChange(event.target.value)}>
+              {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name} - {provider.model}</option>)}
+            </select>
+          </label>
           <label>
             <span>TOC start page</span>
             <input

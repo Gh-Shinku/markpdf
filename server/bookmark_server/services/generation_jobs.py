@@ -31,6 +31,7 @@ class GenerationJobStore:
         project_id: str,
         toc_start: int,
         toc_end: int,
+        provider: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         now = utc_now_iso()
@@ -48,6 +49,7 @@ class GenerationJobStore:
             "finished_at": None,
             "error": None,
             "result": None,
+            "provider": provider,
             "progress": {
                 "phase": "queued",
                 "current_page": None,

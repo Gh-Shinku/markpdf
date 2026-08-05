@@ -1,24 +1,29 @@
 import { requestJson } from "../../api";
-import type { SettingsDraft, SettingsState } from "../../types";
+import type { VlmProvider, VlmProviderDraft } from "../../types";
 
-export const settingsKey = ["settings", "llm"] as const;
+export const settingsKey = ["settings", "providers"] as const;
 
-export async function getSettings(): Promise<SettingsState> {
-  const data = await requestJson<{ settings: SettingsState }>("/api/settings/llm");
-  return data.settings;
+export async function getProviders(): Promise<VlmProvider[]> {
+  const data = await requestJson<{ providers: VlmProvider[] }>("/api/settings/providers");
+  return data.providers;
 }
 
-export async function saveSettings(draft: SettingsDraft): Promise<SettingsState> {
-  const payload: { base_url: string; model: string; api_key?: string } = {
+export async function saveProviders(drafts: VlmProviderDraft[]): Promise<VlmProvider[]> {
+  const providers = drafts.map((draft) => ({
+    ...(draft.id ? { id: draft.id } : {}),
+    name: draft.name,
     base_url: draft.baseUrl,
-    model: draft.model
-  };
-  if (draft.apiKey.trim()) {
-    payload.api_key = draft.apiKey;
-  }
-  const data = await requestJson<{ settings: SettingsState }>("/api/settings/llm", {
+    model: draft.model,
+    ...(draft.apiKey.trim() ? { api_key: draft.apiKey } : {})
+  }));
+  const data = await requestJson<{ providers: VlmProvider[] }>("/api/settings/providers", {
     method: "PUT",
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ providers })
   });
-  return data.settings;
+  return data.providers;
+}
+
+export async function testProvider(providerId: string): Promise<VlmProvider> {
+  const data = await requestJson<{ provider: VlmProvider }>(`/api/settings/providers/${providerId}/test`, { method: "POST" });
+  return data.provider;
 }

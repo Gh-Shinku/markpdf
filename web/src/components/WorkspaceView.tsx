@@ -18,12 +18,15 @@ import { JsonEditor, type JsonEditorHandle } from "../JsonEditor";
 import { PreviewSettingsMenu } from "./PreviewSettingsMenu";
 import previewStyles from "./PreviewSettingsMenu.module.css";
 import type { Project } from "../types";
+import type { TocFile } from "../types";
 import { PdfViewer } from "./PdfViewer";
 import { makeBookmarkedFilename } from "../utils";
 
 type WorkspaceViewProps = {
   project: Project | null;
   tocText: string;
+  tocFiles: TocFile[];
+  selectedTocFileId: string;
   pageOffset: string;
   theme: "light" | "dark";
   canUseProjectActions: boolean;
@@ -44,6 +47,7 @@ type WorkspaceViewProps = {
   onOpenGenerateDialog: () => void;
   onApplyPreview: () => void;
   onEditorChange: (value: string) => void;
+  onSelectTocFile: (tocFileId: string) => void;
   onSplitterKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   onSplitterPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSplitterPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -54,6 +58,8 @@ type WorkspaceViewProps = {
 export function WorkspaceView({
   project,
   tocText,
+  tocFiles,
+  selectedTocFileId,
   pageOffset,
   theme,
   canUseProjectActions,
@@ -74,6 +80,7 @@ export function WorkspaceView({
   onOpenGenerateDialog,
   onApplyPreview,
   onEditorChange,
+  onSelectTocFile,
   onSplitterKeyDown,
   onSplitterPointerDown,
   onSplitterPointerMove,
@@ -112,7 +119,13 @@ export function WorkspaceView({
               AI Generate
             </button>
           </div>
-          <JsonEditor ref={editorRef} value={tocText} theme={theme} onChange={onEditorChange} />
+          <div className="toc-editor-workspace">
+            <aside className="toc-file-explorer" aria-label="TOC files">
+              <span>TOC files</span>
+              {tocFiles.map((file) => <button key={file.id} className={file.id === selectedTocFileId ? "active" : ""} type="button" onClick={() => onSelectTocFile(file.id)} title={file.name}>{file.name}</button>)}
+            </aside>
+            <JsonEditor ref={editorRef} value={tocText} theme={theme} onChange={onEditorChange} />
+          </div>
         </section>
 
         <div

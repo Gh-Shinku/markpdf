@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, CircleDashed, Clock3, ExternalLink, ListChecks, Loader2 } from "lucide-react";
-import type { GenerationJob, Project } from "../types";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, Check, CheckCircle2, CircleDashed, Clock3, Download, ExternalLink, ListChecks, Loader2, Plus } from "lucide-react";
+import type { GenerationJob, Project, VlmProvider } from "../types";
 import { formatDate } from "../utils";
 import { AppNavigation } from "./AppNavigation";
 import styles from "./TasksView.module.css";
@@ -10,12 +10,15 @@ type TaskFilter = "all" | "active" | "succeeded" | "failed";
 type TasksViewProps = {
   jobs: GenerationJob[];
   projects: Project[];
+  providers: VlmProvider[];
   isLoading: boolean;
   error?: string;
   onOpenHome: () => void;
   onOpenTasks: () => void;
   onOpenSettings: () => void;
   onOpenProject: (projectId: string) => void;
+  onStartBatch: (requests: Array<{ projectId: string; tocStart: number; tocEnd: number; providerId: string }>) => void;
+  onApplyJob: (jobId: string) => void;
 };
 
 const filters: Array<{ value: TaskFilter; label: string }> = [
@@ -46,17 +49,24 @@ function StatusIcon({ job }: { job: GenerationJob }) {
 export function TasksView({
   jobs,
   projects,
+  providers,
   isLoading,
   error,
   onOpenHome,
   onOpenTasks,
   onOpenSettings,
   onOpenProject
+  , onStartBatch, onApplyJob
 }: TasksViewProps) {
   const [filter, setFilter] = useState<TaskFilter>("all");
   const projectNames = useMemo(() => new Map(projects.map((project) => [project.id, project.name])), [projects]);
   const visibleJobs = jobs.filter((job) => filter === "all" || filter === "active" ? (filter === "all" || isActive(job)) : job.status === filter);
   const activeCount = jobs.filter(isActive).length;
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [providerId, setProviderId] = useState("");
+  const verifiedProviders = providers.filter((provider) => provider.verification_status === "verified");
+  const activeProjectIds = new Set(jobs.filter(isActive).map((job) => job.project_id));
+  useEffect(() => { if (!verifiedProviders.some((provider) => provider.id === providerId)) setProviderId(verifiedProviders[0]?.id ?? ""); }, [providerId, verifiedProviders]);
 
   return (
     <main className="app-shell">
@@ -73,6 +83,11 @@ export function TasksView({
       </header>
 
       <section className={`${styles.content} app-content-panel`} aria-label="Generation tasks">
+        <section className={styles.batch} aria-label="Create generation tasks">
+          <div className={styles.batchHeader}><div><p className="section-kicker">Batch generation</p><h2>Select PDFs</h2></div><button className="primary-action" type="button" disabled={!selectedProjectIds.length || !providerId} onClick={() => onStartBatch(selectedProjectIds.map((projectId) => { const project = projects.find((item) => item.id === projectId)!; return { projectId, tocStart: 1, tocEnd: project.page_count, providerId }; }))}><Plus size={16} />Queue</button></div>
+          <div className={styles.batchControls}><select value={providerId} onChange={(event) => setProviderId(event.target.value)}><option value="">No verified VLM API</option>{verifiedProviders.map((provider) => <option key={provider.id} value={provider.id}>{provider.name} - {provider.model}</option>)}</select></div>
+          <div className={styles.projectPicker}>{projects.map((project) => <label key={project.id} className={activeProjectIds.has(project.id) ? styles.unavailable : ""}><input type="checkbox" disabled={activeProjectIds.has(project.id)} checked={selectedProjectIds.includes(project.id)} onChange={(event) => setSelectedProjectIds((current) => event.target.checked ? [...current, project.id] : current.filter((id) => id !== project.id))} /><span>{project.name}</span><small>{project.page_count} pages</small></label>)}</div>
+        </section>
         <div className={styles.filters} role="group" aria-label="Filter tasks">
           {filters.map(({ value, label }) => (
             <button key={value} className={filter === value ? styles.selected : ""} type="button" onClick={() => setFilter(value)}>
@@ -119,6 +134,7 @@ export function TasksView({
                       <ExternalLink size={16} aria-hidden="true" />
                     </button>
                   ) : null}
+                  {job.status === "succeeded" ? <div className={styles.jobActions}><button className={styles.openProject} type="button" title="Apply generated TOC" aria-label="Apply generated TOC" onClick={() => onApplyJob(job.id)}><Check size={16} /></button><a className={styles.openProject} href={`/api/jobs/${job.id}/download`} title="Download generated PDF" aria-label="Download generated PDF"><Download size={16} /></a></div> : null}
                 </article>
               );
             })}

@@ -1,116 +1,92 @@
-import type { Dispatch, SetStateAction } from "react";
-import { ArrowLeft, Moon, Save, Sun } from "lucide-react";
+import { useState, type Dispatch, type DragEvent, type SetStateAction } from "react";
+import { ArrowLeft, GripVertical, Moon, Plus, Save, Settings2, Sun, Trash2, X, Zap } from "lucide-react";
 import type { ThemePreference } from "../hooks/useThemePreference";
-import type { SettingsDraft, SettingsState } from "../types";
+import type { VlmProvider, VlmProviderDraft } from "../types";
 import { AppNavigation } from "./AppNavigation";
 
 type SettingsViewProps = {
-  settings: SettingsState | null;
-  settingsDraft: SettingsDraft;
+  providers: VlmProvider[];
+  drafts: VlmProviderDraft[];
   themePreference: ThemePreference;
-  onSettingsDraftChange: Dispatch<SetStateAction<SettingsDraft>>;
+  testingProviderId: string | null;
+  onProvidersChange: Dispatch<SetStateAction<VlmProviderDraft[]>>;
   onThemePreferenceChange: (value: ThemePreference) => void;
   onBack: () => void;
   onOpenHome: () => void;
   onOpenTasks: () => void;
   onSave: () => void;
+  onTest: (providerId: string) => void;
 };
 
-export function SettingsView({
-  settings,
-  settingsDraft,
-  themePreference,
-  onSettingsDraftChange,
-  onThemePreferenceChange,
-  onBack,
-  onOpenHome,
-  onOpenTasks,
-  onSave
-}: SettingsViewProps) {
+const blankProvider = (): VlmProviderDraft => ({ name: "", baseUrl: "", model: "", apiKey: "" });
+
+export function SettingsView({ providers, drafts, themePreference, testingProviderId, onProvidersChange, onThemePreferenceChange, onBack, onOpenHome, onOpenTasks, onSave, onTest }: SettingsViewProps) {
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [modalDraft, setModalDraft] = useState<VlmProviderDraft | null>(null);
+  function update(index: number, values: Partial<VlmProviderDraft>) {
+    onProvidersChange((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...values } : item));
+  }
+
+  function reorder(from: number, to: number) {
+    if (from === to) return;
+    onProvidersChange((current) => {
+      const next = [...current];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
+    });
+  }
+
+  function onDragStart(event: DragEvent<HTMLButtonElement>, index: number) {
+    event.dataTransfer.setData("text/plain", String(index));
+    event.dataTransfer.effectAllowed = "move";
+  }
+  function openAdd() { setEditingIndex(null); setModalDraft(blankProvider()); }
+  function openEdit(index: number) { setEditingIndex(index); setModalDraft({ ...drafts[index] }); }
+  function saveModal() { if (!modalDraft) return; onProvidersChange((current) => editingIndex === null ? [...current, modalDraft] : current.map((item, index) => index === editingIndex ? modalDraft : item)); setModalDraft(null); }
+
   return (
     <main className="app-shell settings-shell">
       <AppNavigation active="settings" onHome={onOpenHome} onTasks={onOpenTasks} onSettings={() => undefined} />
       <header className="app-header">
-        <div>
-          <p className="eyebrow">Preferences</p>
-          <div>
-            <h1>Settings</h1>
-          </div>
-        </div>
+        <div><p className="eyebrow">Preferences</p><h1>Settings</h1></div>
         <div className="header-actions">
-          <button className="secondary-action" type="button" onClick={onBack}>
-            <ArrowLeft size={16} />
-            Back
-          </button>
-          <button className="primary-action" type="button" onClick={onSave}>
-            <Save size={16} />
-            Save
-          </button>
+          <button className="secondary-action" type="button" onClick={onBack}><ArrowLeft size={16} />Back</button>
+          <button className="primary-action" type="button" onClick={onSave}><Save size={16} />Save</button>
         </div>
       </header>
-
       <section className="settings-panel app-content-panel">
         <section className="settings-group" aria-labelledby="appearance-heading">
-          <div className="settings-group-header">
-            <div>
-              <p className="section-kicker">Appearance</p>
-              <h2 id="appearance-heading">Theme</h2>
-            </div>
-          </div>
+          <div className="settings-group-header"><div><p className="section-kicker">Appearance</p><h2 id="appearance-heading">Theme</h2></div></div>
           <div className="theme-segmented" role="group" aria-label="Color theme">
             <button className={themePreference === "system" ? "active" : ""} type="button" onClick={() => onThemePreferenceChange("system")}>System</button>
-            <button className={themePreference === "light" ? "active" : ""} type="button" onClick={() => onThemePreferenceChange("light")}><Sun size={15} /> Light</button>
-            <button className={themePreference === "dark" ? "active" : ""} type="button" onClick={() => onThemePreferenceChange("dark")}><Moon size={15} /> Dark</button>
+            <button className={themePreference === "light" ? "active" : ""} type="button" onClick={() => onThemePreferenceChange("light")}><Sun size={15} />Light</button>
+            <button className={themePreference === "dark" ? "active" : ""} type="button" onClick={() => onThemePreferenceChange("dark")}><Moon size={15} />Dark</button>
           </div>
         </section>
-        <section className="settings-group" aria-labelledby="connection-heading">
+        <section className="settings-group" aria-labelledby="providers-heading">
           <div className="settings-group-header">
-            <div>
-              <p className="section-kicker">Generation</p>
-              <h2 id="connection-heading">LLM connection</h2>
-            </div>
+            <div><p className="section-kicker">Generation</p><h2 id="providers-heading">VLM APIs</h2></div>
+            <button className="secondary-action" type="button" onClick={openAdd}><Plus size={16} />Add API</button>
           </div>
-        <div className="settings-form">
-          <label>
-            <span>Base URL</span>
-            <input
-              value={settingsDraft.baseUrl}
-              onChange={(event) =>
-                onSettingsDraftChange((draft) => ({ ...draft, baseUrl: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            <span>Model</span>
-            <input
-              value={settingsDraft.model}
-              onChange={(event) =>
-                onSettingsDraftChange((draft) => ({ ...draft, model: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            <span>API key</span>
-            <input
-              type="password"
-              placeholder={
-                settings?.has_api_key
-                  ? `Configured (${settings.api_key_hint})`
-                  : "Paste an API key"
-              }
-              value={settingsDraft.apiKey}
-              onChange={(event) =>
-                onSettingsDraftChange((draft) => ({ ...draft, apiKey: event.target.value }))
-              }
-            />
-          </label>
-          <p className="settings-note">
-            The key is stored in a local server config file in plain text. Use this only for a
-            trusted local workspace.
-          </p>
-        </div>
+          <div className="provider-list">
+            {drafts.map((draft, index) => {
+              const provider = draft.id ? providers.find((item) => item.id === draft.id) : null;
+              return <article className="provider-row" key={draft.id ?? `new-${index}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorder(Number(event.dataTransfer.getData("text/plain")), index)}>
+                <button className="provider-grip" type="button" draggable onDragStart={(event) => onDragStart(event, index)} title="Drag to reorder" aria-label="Drag to reorder"><GripVertical size={17} /></button>
+                <strong className="provider-name">{draft.name || "Untitled API"}</strong>
+                <div className="provider-actions">
+                  <span className={`provider-status ${provider?.verification_status ?? "unverified"}`}>{provider?.verification_status ?? "Unsaved"}</span>
+                  {provider?.id ? <button className="icon-button" type="button" disabled={testingProviderId === provider.id} title="Test VLM API" aria-label="Test VLM API" onClick={() => onTest(provider.id)}><Zap size={16} /></button> : null}
+                  <button className="icon-button" type="button" title="Edit API" aria-label="Edit API" onClick={() => openEdit(index)}><Settings2 size={16} /></button>
+                  <button className="icon-button danger-icon" type="button" title="Delete API" aria-label="Delete API" onClick={() => onProvidersChange((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={16} /></button>
+                </div>
+              </article>;
+            })}
+          </div>
         </section>
       </section>
+      {modalDraft ? <div className="modal-backdrop" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="provider-title"><div className="modal-header"><h2 id="provider-title">{editingIndex === null ? "Add API" : "Edit API"}</h2><button className="secondary-action icon-only" type="button" aria-label="Close" onClick={() => setModalDraft(null)}><X size={16} /></button></div><div className="settings-form"><label><span>API name</span><input value={modalDraft.name} onChange={(event) => setModalDraft({ ...modalDraft, name: event.target.value })} /></label><label><span>Base URL</span><input value={modalDraft.baseUrl} onChange={(event) => setModalDraft({ ...modalDraft, baseUrl: event.target.value })} /></label><label><span>Model</span><input value={modalDraft.model} onChange={(event) => setModalDraft({ ...modalDraft, model: event.target.value })} /></label><label><span>API key</span><input type="password" value={modalDraft.apiKey} placeholder={editingIndex !== null && providers.find((item) => item.id === drafts[editingIndex]?.id)?.has_api_key ? "Configured" : "API key"} onChange={(event) => setModalDraft({ ...modalDraft, apiKey: event.target.value })} /></label></div><div className="modal-actions"><button className="secondary-action" type="button" onClick={() => setModalDraft(null)}>Cancel</button><button className="primary-action" type="button" disabled={!modalDraft.name.trim() || !modalDraft.baseUrl.trim() || !modalDraft.model.trim()} onClick={saveModal}>Save</button></div></section></div> : null}
     </main>
   );
 }

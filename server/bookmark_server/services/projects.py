@@ -230,28 +230,48 @@ class ProjectStore:
         )
 
     def read_llm_settings(self) -> dict[str, Any]:
+        providers = self.read_llm_providers()
+        return providers[0] if providers else {"base_url": "", "model": "", "api_key": ""}
+
+    def read_llm_providers(self) -> list[dict[str, Any]]:
         if not self.settings_file.exists():
-            return {
-                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                "model": "qwen3-vl-flash",
-                "api_key": "",
-            }
-        return json.loads(self.settings_file.read_text(encoding="utf-8"))
+            return [self._provider_record("default", "Qwen VL", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3-vl-flash", "")]
+        raw = json.loads(self.settings_file.read_text(encoding="utf-8"))
+        if isinstance(raw.get("providers"), list):
+            return [self._normalize_provider(item, index) for index, item in enumerate(raw["providers"]) if isinstance(item, dict)]
+        # Migrate the legacy single-provider file without changing its credential.
+        return [self._provider_record("default", str(raw.get("model") or "Default VLM"), str(raw.get("base_url") or ""), str(raw.get("model") or ""), str(raw.get("api_key") or ""))]
+
+    def save_llm_providers(self, providers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        self.root.mkdir(parents=True, exist_ok=True)
+        existing = {str(item["id"]): item for item in self.read_llm_providers()}
+        normalized: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for index, item in enumerate(providers):
+            provider_id = str(item.get("id") or uuid4().hex)
+            if provider_id in seen:
+                raise ValueError("Provider IDs must be unique")
+            seen.add(provider_id)
+            previous = existing.get(provider_id)
+            api_key_value = item.get("api_key")
+            api_key = str(previous.get("api_key") or "") if api_key_value in {None, ""} and previous else str(api_key_value or "")
+            provider = self._provider_record(
+                provider_id,
+                str(item.get("name") or item.get("model") or f"VLM API {index + 1}").strip(),
+                str(item.get("base_url") or "").strip(),
+                str(item.get("model") or "").strip(),
+                api_key,
+            )
+            if previous and self._provider_connection(previous) == self._provider_connection(provider):
+                provider.update({key: previous.get(key) for key in ("verification_status", "verification_message", "verified_at")})
+            normalized.append(provider)
+        self.settings_file.write_text(json.dumps({"providers": normalized}, ensure_ascii=False, indent=2), encoding="utf-8")
+        return normalized
 
     def save_llm_settings(self, settings: dict[str, Any]) -> dict[str, Any]:
-        self.root.mkdir(parents=True, exist_ok=True)
-        previous = self.read_llm_settings()
-        api_key = settings.get("api_key")
-        next_settings = {
-            "base_url": str(settings.get("base_url") or previous.get("base_url") or "").strip(),
-            "model": str(settings.get("model") or previous.get("model") or "").strip(),
-            "api_key": previous.get("api_key", "") if api_key is None else str(api_key),
-        }
-        self.settings_file.write_text(
-            json.dumps(next_settings, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        return next_settings
+        provider = self.read_llm_providers()[0]
+        provider.update(settings)
+        return self.save_llm_providers([provider])[0]
 
     def public_llm_settings(self) -> dict[str, Any]:
         settings = self.read_llm_settings()
@@ -262,6 +282,99 @@ class ProjectStore:
             "has_api_key": bool(api_key),
             "api_key_hint": self._api_key_hint(api_key),
         }
+
+    def public_llm_providers(self) -> list[dict[str, Any]]:
+        return [self._public_provider(item) for item in self.read_llm_providers()]
+
+    def get_llm_provider(self, provider_id: str) -> dict[str, Any]:
+        provider = next((item for item in self.read_llm_providers() if item["id"] == provider_id), None)
+        if provider is None:
+            raise KeyError(provider_id)
+        return provider
+
+    def record_provider_verification(self, provider_id: str, status: str, message: str) -> dict[str, Any]:
+        providers = self.read_llm_providers()
+        provider = next((item for item in providers if item["id"] == provider_id), None)
+        if provider is None:
+            raise KeyError(provider_id)
+        provider["verification_status"] = status
+        provider["verification_message"] = message
+        provider["verified_at"] = utc_now_iso()
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.settings_file.write_text(json.dumps({"providers": providers}, ensure_ascii=False, indent=2), encoding="utf-8")
+        return self._public_provider(provider)
+
+    def list_toc_files(self, project_id: str) -> list[dict[str, Any]]:
+        metadata = self.get_project(project_id)
+        records = metadata.get("toc_files")
+        if not isinstance(records, list):
+            return [{"id": "main", "name": "toc.json", "kind": "manual", "created_at": metadata.get("toc_updated_at"), "updated_at": metadata.get("toc_updated_at"), "source_job_id": None}]
+        return records
+
+    def read_toc_file(self, project_id: str, toc_file_id: str) -> str:
+        return self._toc_file_path(project_id, toc_file_id).read_text(encoding="utf-8")
+
+    def save_toc_file(self, project_id: str, toc_file_id: str, toc_text: str) -> dict[str, Any]:
+        path = self._toc_file_path(project_id, toc_file_id)
+        path.write_text(toc_text, encoding="utf-8")
+        metadata = self.get_project(project_id)
+        now = utc_now_iso()
+        metadata["updated_at"] = now
+        if toc_file_id == "main":
+            metadata["toc_updated_at"] = now
+        for record in metadata.get("toc_files", []):
+            if record.get("id") == toc_file_id:
+                record["updated_at"] = now
+        self._write_metadata(project_id, metadata)
+        return metadata
+
+    def create_generated_toc_file(self, project_id: str, job_id: str, toc_text: str, provider: dict[str, Any] | None = None) -> dict[str, Any]:
+        metadata = self.get_project(project_id)
+        candidate_dir = self._project_dir(project_id) / "toc_candidates"
+        candidate_dir.mkdir(parents=True, exist_ok=True)
+        toc_file_id = f"generated-{job_id}"
+        (candidate_dir / f"{toc_file_id}.json").write_text(toc_text, encoding="utf-8")
+        now = utc_now_iso()
+        record = {
+            "id": toc_file_id,
+            "name": f"generated-{job_id[:8]}.json",
+            "kind": "generated",
+            "created_at": now,
+            "updated_at": now,
+            "source_job_id": job_id,
+            "provider": provider,
+        }
+        records = metadata.setdefault("toc_files", self.list_toc_files(project_id))
+        records.append(record)
+        metadata["generated_at"] = now
+        metadata["updated_at"] = now
+        self._write_metadata(project_id, metadata)
+        return record
+
+    def _toc_file_path(self, project_id: str, toc_file_id: str) -> Path:
+        if toc_file_id == "main":
+            return self.toc_path(project_id)
+        record = next((item for item in self.list_toc_files(project_id) if item.get("id") == toc_file_id), None)
+        if record is None:
+            raise KeyError(toc_file_id)
+        return self._project_dir(project_id) / "toc_candidates" / f"{toc_file_id}.json"
+
+    def _provider_record(self, provider_id: str, name: str, base_url: str, model: str, api_key: str) -> dict[str, Any]:
+        return {"id": provider_id, "name": name, "base_url": base_url, "model": model, "api_key": api_key, "verification_status": "unverified", "verification_message": "Not tested", "verified_at": None}
+
+    def _normalize_provider(self, item: dict[str, Any], index: int) -> dict[str, Any]:
+        provider = self._provider_record(str(item.get("id") or uuid4().hex), str(item.get("name") or item.get("model") or f"VLM API {index + 1}"), str(item.get("base_url") or ""), str(item.get("model") or ""), str(item.get("api_key") or ""))
+        provider.update({key: item.get(key) for key in ("verification_status", "verification_message", "verified_at") if key in item})
+        return provider
+
+    def _provider_connection(self, provider: dict[str, Any]) -> tuple[str, str, str]:
+        return (str(provider.get("base_url") or ""), str(provider.get("model") or ""), str(provider.get("api_key") or ""))
+
+    def _public_provider(self, provider: dict[str, Any]) -> dict[str, Any]:
+        public = {key: value for key, value in provider.items() if key != "api_key"}
+        api_key = str(provider.get("api_key") or "")
+        public.update({"has_api_key": bool(api_key), "api_key_hint": self._api_key_hint(api_key)})
+        return public
 
     def _project_dir(self, project_id: str) -> Path:
         return self.projects_dir / project_id

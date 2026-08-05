@@ -15,7 +15,7 @@ function job(status: GenerationJob["status"]): GenerationJob {
     message: `${status} message`, toc_start: 1, toc_end: 2,
     created_at: "2026-08-05T00:00:00Z", updated_at: "2026-08-05T00:01:00Z",
     started_at: null, finished_at: status === "succeeded" ? "2026-08-05T00:01:00Z" : null,
-    error: status === "failed" ? "Request failed" : null, result: null,
+    error: status === "failed" ? "Request failed" : null, result: null, provider: null,
     progress: { phase: status === "succeeded" ? "completed" : status === "failed" ? "failed" : "queued", current_page: 1, completed_pages: 1, total_pages: 2, source: null, entries: null }
   };
 }
@@ -23,7 +23,7 @@ function job(status: GenerationJob["status"]): GenerationJob {
 describe("TasksView", () => {
   it("filters tasks and opens the matching workspace", () => {
     const onOpenProject = vi.fn();
-    render(<TasksView jobs={[job("running"), job("succeeded")]} projects={[project]} isLoading={false} onOpenHome={vi.fn()} onOpenTasks={vi.fn()} onOpenSettings={vi.fn()} onOpenProject={onOpenProject} />);
+    render(<TasksView jobs={[job("running"), job("succeeded")]} projects={[project]} providers={[]} isLoading={false} onOpenHome={vi.fn()} onOpenTasks={vi.fn()} onOpenSettings={vi.fn()} onOpenProject={onOpenProject} onStartBatch={vi.fn()} onApplyJob={vi.fn()} />);
 
     expect(screen.getByText("running message")).toBeTruthy();
     expect(screen.getByText("succeeded message")).toBeTruthy();

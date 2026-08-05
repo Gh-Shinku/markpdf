@@ -36,6 +36,38 @@ export type SettingsDraft = {
   apiKey: string;
 };
 
+export type VlmProviderStatus = "unverified" | "verified" | "failed";
+
+export type VlmProvider = {
+  id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  has_api_key: boolean;
+  api_key_hint: string;
+  verification_status: VlmProviderStatus;
+  verification_message: string;
+  verified_at: string | null;
+};
+
+export type VlmProviderDraft = {
+  id?: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+};
+
+export type TocFile = {
+  id: string;
+  name: string;
+  kind: "manual" | "generated";
+  created_at: string | null;
+  updated_at: string | null;
+  source_job_id: string | null;
+  provider?: Pick<VlmProvider, "id" | "name" | "base_url" | "model"> | null;
+};
+
 export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed";
 
 export type GenerationJobProgress = {
@@ -61,8 +93,10 @@ export type GenerationJob = {
   finished_at: string | null;
   error: string | null;
   progress: GenerationJobProgress;
+  provider: Pick<VlmProvider, "id" | "name" | "base_url" | "model"> | null;
   result: {
     project?: Project;
+    toc_file?: TocFile;
     stats?: Record<string, unknown>;
   } | null;
 };

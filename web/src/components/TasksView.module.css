@@ -4,6 +4,16 @@
   gap: 16px;
   overflow: auto;
 }
+.batch { display: grid; gap: 10px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.batchHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.batchHeader h2 { font-size: 14px; }
+.batchControls select { min-height: 30px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-raised); color: var(--text); }
+.projectPicker { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px; max-height: 150px; overflow: auto; }
+.projectPicker label { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 30px; padding: 4px 6px; border-radius: 4px; color: var(--text-secondary); font-size: 12px; }
+.projectPicker label:hover { background: var(--surface-hover); }
+.projectPicker span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.projectPicker small { color: var(--text-muted); }
+.unavailable { opacity: .55; }
 
 .activeCount {
   display: inline-flex;
@@ -44,7 +54,7 @@
 
 .task {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) minmax(150px, auto) 30px;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(150px, auto) 30px auto;
   align-items: center;
   gap: 12px;
   min-height: 82px;
@@ -74,6 +84,7 @@
 .meta { display: grid; justify-items: end; gap: 4px; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
 .openProject { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 4px; color: var(--text-secondary); background: transparent; cursor: pointer; }
 .openProject:hover { color: var(--accent); background: var(--accent-soft); }
+.jobActions { display: inline-flex; gap: 3px; }
 
 .empty { display: grid; justify-items: center; gap: 8px; padding: 56px 16px; color: var(--text-secondary); font-size: 13px; text-align: center; }
 .error { color: var(--danger); }
