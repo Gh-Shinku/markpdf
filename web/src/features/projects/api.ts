@@ -55,6 +55,7 @@ export type ProjectMetadataUpdate = {
   pageOffset?: number;
   tocStart?: number;
   tocEnd?: number;
+  providerId?: string | null;
 };
 
 export async function saveProjectMetadata(
@@ -67,6 +68,7 @@ export async function saveProjectMetadata(
       page_offset: metadata.pageOffset,
       toc_start: metadata.tocStart,
       toc_end: metadata.tocEnd,
+      provider_id: metadata.providerId,
     }),
   });
   return data.project;

@@ -29,6 +29,7 @@ class ProjectMetadataPayload(BaseModel):
     page_offset: int | None = None
     toc_start: int | None = None
     toc_end: int | None = None
+    provider_id: str | None = None
 
 
 class ValidatePayload(BaseModel):
@@ -114,6 +115,8 @@ def _validate_metadata(project: dict[str, Any], payload: ProjectMetadataPayload)
         raise HTTPException(status_code=400, detail="TOC start page must be <= TOC end page")
     if toc_end > int(project.get("page_count") or 0):
         raise HTTPException(status_code=400, detail="TOC end page exceeds PDF page count")
+    if "provider_id" in payload.model_fields_set and payload.provider_id is not None:
+        _provider_or_400(payload.provider_id)
     return payload
 
 
@@ -276,6 +279,8 @@ def update_project_metadata(project_id: str, payload: ProjectMetadataPayload) ->
         page_offset=payload.page_offset,
         toc_start=payload.toc_start,
         toc_end=payload.toc_end,
+        provider_id=payload.provider_id,
+        provider_id_set="provider_id" in payload.model_fields_set,
     )
     return {"project": metadata}
 
@@ -372,6 +377,8 @@ def generate_project_toc(
         page_offset=payload.page_offset,
         toc_start=payload.toc_start,
         toc_end=payload.toc_end,
+        provider_id=payload.provider_id,
+        provider_id_set=True,
     )
 
     job = generation_job_store.create_job(
@@ -408,6 +415,8 @@ def generate_toc_batch(payload: dict[str, Any], background_tasks: BackgroundTask
             page_offset=request.page_offset,
             toc_start=request.toc_start,
             toc_end=request.toc_end,
+            provider_id=request.provider_id,
+            provider_id_set=True,
         )
         job = generation_job_store.create_job(project_id, request.toc_start, request.toc_end, _provider_snapshot(settings))
         generation_executor.submit(_run_generate_toc_job, job["id"], project_id, request, settings)

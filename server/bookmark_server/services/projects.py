@@ -104,6 +104,7 @@ class ProjectStore:
             "page_offset": page_offset,
             "toc_start": 1,
             "toc_end": page_count,
+            "provider_id": None,
             "page_count": page_count,
             "created_at": now,
             "updated_at": now,
@@ -150,6 +151,8 @@ class ProjectStore:
         page_offset: int | None = None,
         toc_start: int | None = None,
         toc_end: int | None = None,
+        provider_id: str | None = None,
+        provider_id_set: bool = False,
     ) -> dict[str, Any]:
         metadata = self.get_project(project_id)
         if page_offset is not None:
@@ -158,6 +161,8 @@ class ProjectStore:
             metadata["toc_start"] = toc_start
         if toc_end is not None:
             metadata["toc_end"] = toc_end
+        if provider_id_set:
+            metadata["provider_id"] = provider_id
         metadata["updated_at"] = utc_now_iso()
         self._write_metadata(project_id, metadata)
         return metadata
@@ -399,6 +404,7 @@ class ProjectStore:
         normalized["page_offset"] = int(normalized.get("page_offset") or 0)
         normalized["toc_start"] = int(normalized.get("toc_start") or 1)
         normalized["toc_end"] = int(normalized.get("toc_end") or page_count)
+        normalized["provider_id"] = normalized.get("provider_id") or None
         return normalized
 
     def _write_metadata(self, project_id: str, metadata: dict[str, Any]) -> None:

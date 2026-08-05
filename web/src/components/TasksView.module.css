@@ -27,184 +27,22 @@
   color: var(--accent);
 }
 
-.batch,
 .taskPanel {
+  display: grid;
+  overflow: hidden;
   width: min(1120px, 100%);
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-raised);
 }
 
-.batch {
-  display: grid;
-  gap: 16px;
-  padding: 16px;
-}
-
-.batchTop {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.batchTop h2,
 .listHeading h2 {
   font-size: 15px;
 }
 
-.batchActions {
-  display: flex;
-  align-items: end;
-  gap: 8px;
-}
-
-.providerField {
-  display: grid;
-  gap: 4px;
-  min-width: min(320px, 48vw);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.providerField select {
-  min-height: 32px;
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  color: var(--text);
-  background: var(--surface-raised);
-}
-
-.pickerHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.pickerHeader span {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.pickerHeader small,
-.projectPicker small,
 .listHeading span {
   color: var(--text-muted);
   font-size: 12px;
-}
-
-.projectPicker {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 6px;
-  max-height: 176px;
-  overflow: auto;
-}
-
-.projectPicker label {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.projectPicker label:hover {
-  border-color: var(--line);
-  background: var(--surface-hover);
-}
-
-.projectPicker span {
-  overflow: hidden;
-  color: var(--text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.unavailable {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.metaEditor {
-  display: grid;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-
-.metaEditorHeader,
-.metaEditorRow {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(82px, 112px));
-  align-items: center;
-  gap: 8px;
-}
-
-.metaEditorHeader {
-  min-height: 32px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--line);
-  color: var(--text-muted);
-  background: var(--surface-subtle);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.metaEditorRow {
-  min-height: 40px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--line);
-}
-
-.metaEditorRow:last-child {
-  border-bottom: 0;
-}
-
-.metaEditorRow > span {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.metaEditorRow input {
-  width: 100%;
-  min-height: 30px;
-  padding: 4px 7px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  color: var(--text);
-  background: var(--surface-raised);
-}
-
-.metaEditorRow.invalid {
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
-}
-
-.metaEditorRow.invalid input {
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
-}
-
-.taskPanel {
-  display: grid;
-  overflow: hidden;
 }
 
 .listToolbar {
@@ -433,19 +271,9 @@
     gap: 4px;
   }
 
-  .batchTop,
   .listToolbar {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .batchActions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .providerField {
-    min-width: 0;
   }
 
   .filters {
@@ -455,16 +283,6 @@
 
   .filters button {
     flex: 1 0 auto;
-  }
-
-  .metaEditor {
-    overflow-x: auto;
-  }
-
-  .metaEditorHeader,
-  .metaEditorRow {
-    grid-template-columns: minmax(160px, 1fr) repeat(3, 86px);
-    min-width: 460px;
   }
 
   .task {
@@ -492,10 +310,6 @@
 
   .headerStats span:not(.headerStat) {
     display: none;
-  }
-
-  .projectPicker {
-    grid-template-columns: 1fr;
   }
 
   .task {

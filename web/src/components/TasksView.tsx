@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -9,39 +9,23 @@ import {
   ExternalLink,
   ListChecks,
   Loader2,
-  Plus,
 } from "lucide-react";
-import type { GenerationJob, Project, VlmProvider } from "../types";
+import type { GenerationJob, Project } from "../types";
 import { formatDate } from "../utils";
 import { AppNavigation } from "./AppNavigation";
 import styles from "./TasksView.module.css";
 
 type TaskFilter = "all" | "active" | "succeeded" | "failed";
-type BatchProjectMeta = {
-  tocStart: string;
-  tocEnd: string;
-  pageOffset: string;
-};
 
 type TasksViewProps = {
   jobs: GenerationJob[];
   projects: Project[];
-  providers: VlmProvider[];
   isLoading: boolean;
   error?: string;
   onOpenHome: () => void;
   onOpenTasks: () => void;
   onOpenSettings: () => void;
   onOpenProject: (projectId: string) => void;
-  onStartBatch: (
-    requests: Array<{
-      projectId: string;
-      tocStart: number;
-      tocEnd: number;
-      pageOffset: number;
-      providerId: string;
-    }>,
-  ) => void;
   onApplyJob: (jobId: string) => void;
 };
 
@@ -70,40 +54,15 @@ function StatusIcon({ job }: { job: GenerationJob }) {
   return <AlertCircle size={17} aria-hidden="true" />;
 }
 
-function defaultBatchMeta(project: Project): BatchProjectMeta {
-  return {
-    tocStart: String(project.toc_start ?? 1),
-    tocEnd: String(project.toc_end ?? project.page_count),
-    pageOffset: String(project.page_offset ?? 0),
-  };
-}
-
-function parseBatchMeta(project: Project, meta: BatchProjectMeta | undefined) {
-  const values = meta ?? defaultBatchMeta(project);
-  const tocStart = Number.parseInt(values.tocStart, 10);
-  const tocEnd = Number.parseInt(values.tocEnd, 10);
-  const pageOffset = Number.parseInt(values.pageOffset, 10);
-  const valid =
-    Number.isInteger(tocStart) &&
-    Number.isInteger(tocEnd) &&
-    Number.isInteger(pageOffset) &&
-    tocStart >= 1 &&
-    tocEnd >= tocStart &&
-    tocEnd <= project.page_count;
-  return { tocStart, tocEnd, pageOffset, valid };
-}
-
 export function TasksView({
   jobs,
   projects,
-  providers,
   isLoading,
   error,
   onOpenHome,
   onOpenTasks,
   onOpenSettings,
   onOpenProject,
-  onStartBatch,
   onApplyJob,
 }: TasksViewProps) {
   const [filter, setFilter] = useState<TaskFilter>("all");
@@ -119,30 +78,6 @@ export function TasksView({
   const activeCount = jobs.filter(isActive).length;
   const completedCount = jobs.filter((job) => job.status === "succeeded").length;
   const failedCount = jobs.filter((job) => job.status === "failed").length;
-  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
-  const [projectMeta, setProjectMeta] = useState<Record<string, BatchProjectMeta>>({});
-  const [providerId, setProviderId] = useState("");
-  const verifiedProviders = providers.filter(
-    (provider) => provider.verification_status === "verified",
-  );
-  const activeProjectIds = new Set(jobs.filter(isActive).map((job) => job.project_id));
-  const selectedProjects = selectedProjectIds
-    .map((projectId) => projects.find((project) => project.id === projectId))
-    .filter((project): project is Project => Boolean(project));
-  const canQueue =
-    Boolean(selectedProjects.length && providerId) &&
-    selectedProjects.every((project) => parseBatchMeta(project, projectMeta[project.id]).valid);
-  useEffect(() => {
-    if (!verifiedProviders.some((provider) => provider.id === providerId))
-      setProviderId(verifiedProviders[0]?.id ?? "");
-  }, [providerId, verifiedProviders]);
-
-  function updateProjectMeta(project: Project, patch: Partial<BatchProjectMeta>) {
-    setProjectMeta((current) => ({
-      ...current,
-      [project.id]: { ...defaultBatchMeta(project), ...current[project.id], ...patch },
-    }));
-  }
 
   return (
     <main className="app-shell">
@@ -168,132 +103,6 @@ export function TasksView({
       </header>
 
       <section className={`${styles.content} app-content-panel`} aria-label="Generation tasks">
-        <section className={styles.batch} aria-label="Create generation tasks">
-          <div className={styles.batchTop}>
-            <div>
-              <p className="section-kicker">Batch generation</p>
-              <h2>Select PDFs</h2>
-            </div>
-            <div className={styles.batchActions}>
-              <label className={styles.providerField}>
-                <span>VLM API</span>
-                <select value={providerId} onChange={(event) => setProviderId(event.target.value)}>
-                  <option value="">No verified VLM API</option>
-                  {verifiedProviders.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className="primary-action"
-                type="button"
-                disabled={!canQueue}
-                onClick={() =>
-                  onStartBatch(
-                    selectedProjects.map((project) => {
-                      const meta = parseBatchMeta(project, projectMeta[project.id]);
-                      return {
-                        projectId: project.id,
-                        tocStart: meta.tocStart,
-                        tocEnd: meta.tocEnd,
-                        pageOffset: meta.pageOffset,
-                        providerId,
-                      };
-                    }),
-                  )
-                }
-              >
-                <Plus size={16} />
-                Queue
-              </button>
-            </div>
-          </div>
-          <div className={styles.pickerHeader}>
-            <span>PDFs</span>
-            <small>
-              {selectedProjectIds.length} selected · {projects.length} total
-            </small>
-          </div>
-          <div className={styles.projectPicker}>
-            {projects.map((project) => (
-              <label
-                key={project.id}
-                className={activeProjectIds.has(project.id) ? styles.unavailable : ""}
-              >
-                <input
-                  type="checkbox"
-                  disabled={activeProjectIds.has(project.id)}
-                  checked={selectedProjectIds.includes(project.id)}
-                  onChange={(event) =>
-                    setSelectedProjectIds((current) => {
-                      if (!event.target.checked) return current.filter((id) => id !== project.id);
-                      setProjectMeta((meta) => ({
-                        ...meta,
-                        [project.id]: meta[project.id] ?? defaultBatchMeta(project),
-                      }));
-                      return [...current, project.id];
-                    })
-                  }
-                />
-                <span>{project.name}</span>
-                <small>{project.page_count} pages</small>
-              </label>
-            ))}
-          </div>
-          {selectedProjects.length ? (
-            <div className={styles.metaEditor} aria-label="Selected project metainfo">
-              <div className={styles.metaEditorHeader}>
-                <span>Project</span>
-                <span>TOC start</span>
-                <span>TOC end</span>
-                <span>Offset</span>
-              </div>
-              {selectedProjects.map((project) => {
-                const meta = projectMeta[project.id] ?? defaultBatchMeta(project);
-                const parsed = parseBatchMeta(project, meta);
-                return (
-                  <div
-                    className={`${styles.metaEditorRow}${parsed.valid ? "" : ` ${styles.invalid}`}`}
-                    key={project.id}
-                  >
-                    <span title={project.name}>{project.name}</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={project.page_count}
-                      value={meta.tocStart}
-                      aria-label={`${project.name} TOC start`}
-                      onChange={(event) =>
-                        updateProjectMeta(project, { tocStart: event.target.value })
-                      }
-                    />
-                    <input
-                      type="number"
-                      min={1}
-                      max={project.page_count}
-                      value={meta.tocEnd}
-                      aria-label={`${project.name} TOC end`}
-                      onChange={(event) =>
-                        updateProjectMeta(project, { tocEnd: event.target.value })
-                      }
-                    />
-                    <input
-                      type="number"
-                      value={meta.pageOffset}
-                      aria-label={`${project.name} page offset`}
-                      onChange={(event) =>
-                        updateProjectMeta(project, { pageOffset: event.target.value })
-                      }
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
-        </section>
-
         <section className={styles.taskPanel} aria-label="Task history">
           <div className={styles.listToolbar}>
             <div className={styles.listHeading}>

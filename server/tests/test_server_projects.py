@@ -157,10 +157,39 @@ def test_project_metadata_persists_page_offset_and_toc_range(tmp_path) -> None:
     assert response.json()["project"]["page_offset"] == 28
     assert response.json()["project"]["toc_start"] == 2
     assert response.json()["project"]["toc_end"] == 3
+    assert response.json()["project"]["provider_id"] is None
     project_response = client.get(f"/api/projects/{project['id']}")
     assert project_response.json()["project"]["page_offset"] == 28
     assert project_response.json()["project"]["toc_start"] == 2
     assert project_response.json()["project"]["toc_end"] == 3
+    assert project_response.json()["project"]["provider_id"] is None
+
+
+def test_project_metadata_persists_verified_provider(tmp_path) -> None:
+    project = _create_project(tmp_path, page_count=4)
+    provider_id = _save_verified_provider()
+
+    response = client.put(
+        f"/api/projects/{project['id']}/metadata",
+        json={"provider_id": provider_id},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["project"]["provider_id"] == provider_id
+    project_response = client.get(f"/api/projects/{project['id']}")
+    assert project_response.json()["project"]["provider_id"] == provider_id
+
+
+def test_project_metadata_rejects_unverified_provider(tmp_path) -> None:
+    project = _create_project(tmp_path, page_count=4)
+
+    response = client.put(
+        f"/api/projects/{project['id']}/metadata",
+        json={"provider_id": "default"},
+    )
+
+    assert response.status_code == 400
+    assert "vision test" in response.json()["detail"]
 
 
 def test_project_metadata_rejects_invalid_toc_range(tmp_path) -> None:
@@ -419,10 +448,12 @@ def test_batch_generation_persists_project_metainfo(tmp_path, monkeypatch) -> No
     assert first_response.json()["project"]["toc_start"] == 2
     assert first_response.json()["project"]["toc_end"] == 4
     assert first_response.json()["project"]["page_offset"] == 10
+    assert first_response.json()["project"]["provider_id"] == provider_id
     second_response = client.get(f"/api/projects/{second_project['id']}")
     assert second_response.json()["project"]["toc_start"] == 3
     assert second_response.json()["project"]["toc_end"] == 6
     assert second_response.json()["project"]["page_offset"] == -1
+    assert second_response.json()["project"]["provider_id"] == provider_id
 
 
 def test_generation_rejects_second_active_job(tmp_path) -> None:

@@ -11,6 +11,7 @@ const project: Project = {
   page_offset: 0,
   toc_start: 1,
   toc_end: 10,
+  provider_id: null,
   page_count: 10,
   created_at: "2026-08-05T00:00:00Z",
   updated_at: "2026-08-05T00:00:00Z",
@@ -53,13 +54,11 @@ describe("TasksView", () => {
       <TasksView
         jobs={[job("running"), job("succeeded")]}
         projects={[project]}
-        providers={[]}
         isLoading={false}
         onOpenHome={vi.fn()}
         onOpenTasks={vi.fn()}
         onOpenSettings={vi.fn()}
         onOpenProject={onOpenProject}
-        onStartBatch={vi.fn()}
         onApplyJob={vi.fn()}
       />,
     );
