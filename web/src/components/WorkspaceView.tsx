@@ -5,6 +5,7 @@ import type {
   RefObject
 } from "react";
 import {
+  ArrowLeft,
   BookMarked,
   Download,
   FileText,
@@ -12,7 +13,9 @@ import {
   Play,
   Wand2
 } from "lucide-react";
+import { AppNavigation } from "./AppNavigation";
 import { JsonEditor, type JsonEditorHandle } from "../JsonEditor";
+import { StatusLine } from "./StatusLine";
 import type { PreviewPdf, Project, Status } from "../types";
 import { PdfViewer } from "./PdfViewer";
 
@@ -21,7 +24,10 @@ type WorkspaceViewProps = {
   tocText: string;
   pageOffset: string;
   status: Status;
+  theme: "light" | "dark";
   canUseProjectActions: boolean;
+  isPreviewing: boolean;
+  isGenerating: boolean;
   previewPdf: PreviewPdf | null;
   pdfVersion: number;
   isResizing: boolean;
@@ -32,6 +38,7 @@ type WorkspaceViewProps = {
   minSplitPercent: number;
   maxSplitPercent: number;
   onReturnHome: () => void;
+  onOpenSettings: () => void;
   onPageOffsetChange: (value: string) => void;
   onOpenGenerateDialog: () => void;
   onApplyPreview: () => void;
@@ -48,7 +55,10 @@ export function WorkspaceView({
   tocText,
   pageOffset,
   status,
+  theme,
   canUseProjectActions,
+  isPreviewing,
+  isGenerating,
   previewPdf,
   pdfVersion,
   isResizing,
@@ -59,6 +69,7 @@ export function WorkspaceView({
   minSplitPercent,
   maxSplitPercent,
   onReturnHome,
+  onOpenSettings,
   onPageOffsetChange,
   onOpenGenerateDialog,
   onApplyPreview,
@@ -75,10 +86,19 @@ export function WorkspaceView({
 
   return (
     <main className={`app-shell${isResizing ? " resizing" : ""}`}>
-      <header className="topbar workspace-topbar">
-        <button className="home-logo-button" type="button" aria-label="Home" onClick={onReturnHome}>
-          <BookMarked size={20} aria-hidden="true" />
+      <AppNavigation active="workspace" onHome={onReturnHome} onSettings={onOpenSettings} />
+      <header className="workspace-header">
+        <button className="back-button" type="button" onClick={onReturnHome}>
+          <ArrowLeft size={17} aria-hidden="true" />
+          <span>Projects</span>
         </button>
+        <div className="workspace-title">
+          <BookMarked size={17} aria-hidden="true" />
+          <span>{project?.name ?? "Loading project"}</span>
+        </div>
+        {status.kind === "error" ? (
+          <div className="workspace-header-status"><StatusLine status={status} /></div>
+        ) : null}
       </header>
 
       <section className="workspace-grid" ref={workspaceRef} style={workspaceStyle}>
@@ -90,7 +110,7 @@ export function WorkspaceView({
             <button
               className="secondary-action"
               type="button"
-              disabled={!project || status.kind === "loading"}
+              disabled={!project || isGenerating}
               onClick={onOpenGenerateDialog}
             >
               <Wand2 size={16} />
@@ -98,7 +118,7 @@ export function WorkspaceView({
             </button>
           </div>
 
-          <JsonEditor ref={editorRef} value={tocText} onChange={onEditorChange} />
+          <JsonEditor ref={editorRef} value={tocText} theme={theme} onChange={onEditorChange} />
         </section>
 
         <div
@@ -130,7 +150,7 @@ export function WorkspaceView({
                       disabled={!canUseProjectActions}
                       onClick={onApplyPreview}
                     >
-                      {status.kind === "loading" ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
+                      {isPreviewing ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
                       Preview
                     </button>
                   </div>

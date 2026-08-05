@@ -29,6 +29,18 @@ import { makeBookmarkedFilename } from "./utils";
 const DEFAULT_SPLIT_PERCENT = 48;
 const MIN_SPLIT_PERCENT = 30;
 const MAX_SPLIT_PERCENT = 70;
+const THEME_STORAGE_KEY = "bookmark.theme";
+
+export type ThemePreference = "system" | "light" | "dark";
+
+function readThemePreference(): ThemePreference {
+  const value = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return value === "light" || value === "dark" || value === "system" ? value : "system";
+}
+
+function resolveTheme(preference: ThemePreference, prefersDark: boolean): "light" | "dark" {
+  return preference === "system" ? (prefersDark ? "dark" : "light") : preference;
+}
 
 function clampSplitPercent(value: number): number {
   return Math.min(MAX_SPLIT_PERCENT, Math.max(MIN_SPLIT_PERCENT, value));
@@ -45,7 +57,8 @@ export function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [tocText, setTocText] = useState("");
   const [pageOffset, setPageOffset] = useState("0");
-  const [pendingTocFile, setPendingTocFile] = useState<File | null>(null);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(readThemePreference);
+  const [prefersDark, setPrefersDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const [settings, setSettings] = useState<SettingsState | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<SettingsDraft>({
     baseUrl: "",
@@ -72,11 +85,25 @@ export function App() {
   const [splitPercent, setSplitPercent] = useState(DEFAULT_SPLIT_PERCENT);
   const [isResizing, setIsResizing] = useState(false);
   const [previewPdf, setPreviewPdf] = useState<PreviewPdf | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const resolvedTheme = resolveTheme(themePreference, prefersDark);
 
   useEffect(() => {
     void loadProjects();
     void loadSettings();
   }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const updatePreference = () => setPrefersDark(mediaQuery.matches);
+    mediaQuery.addEventListener("change", updatePreference);
+    return () => mediaQuery.removeEventListener("change", updatePreference);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolvedTheme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
+  }, [resolvedTheme, themePreference]);
 
   useEffect(() => {
     if (!currentProjectId) {
@@ -154,6 +181,24 @@ export function App() {
   }, [currentProjectId]);
 
   useEffect(() => {
+    function handleAppShortcut(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey)) {
+        return;
+      }
+      if (event.key.toLowerCase() === "o" && location.pathname === "/") {
+        event.preventDefault();
+        document.getElementById("project-import")?.click();
+      }
+      if (event.key === ",") {
+        event.preventDefault();
+        openSettings();
+      }
+    }
+    window.addEventListener("keydown", handleAppShortcut);
+    return () => window.removeEventListener("keydown", handleAppShortcut);
+  }, [location.pathname]);
+
+  useEffect(() => {
     return () => {
       if (previewPdf) {
         URL.revokeObjectURL(previewPdf.url);
@@ -229,7 +274,6 @@ export function App() {
 
     const sequence = tocSaveSequenceRef.current + 1;
     tocSaveSequenceRef.current = sequence;
-    setStatus({ kind: "loading", message: "Saving TOC JSON" });
 
     const timeoutId = window.setTimeout(() => {
       void autosaveTocJson(project.id, tocText, sequence);
@@ -256,7 +300,6 @@ export function App() {
 
     const sequence = offsetSaveSequenceRef.current + 1;
     offsetSaveSequenceRef.current = sequence;
-    setStatus({ kind: "loading", message: "Saving project offset" });
 
     const timeoutId = window.setTimeout(() => {
       void autosaveProjectOffset(project.id, offset, sequence);
@@ -270,8 +313,8 @@ export function App() {
   } as CSSProperties;
 
   const canUseProjectActions = useMemo(
-    () => Boolean(project && tocText.trim() && pageOffset.trim() && status.kind !== "loading"),
-    [pageOffset, project, status.kind, tocText]
+    () => Boolean(project && tocText.trim() && pageOffset.trim() && !isPreviewing && !activeGenerationJobId),
+    [activeGenerationJobId, isPreviewing, pageOffset, project, tocText]
   );
 
   async function loadProjects() {
@@ -329,18 +372,18 @@ export function App() {
     void loadProjects();
   }
 
-  async function createProject(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    event.target.value = "";
+  async function createProject(file: File | null) {
     if (!file) {
+      return;
+    }
+
+    if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
+      setStatus({ kind: "error", message: "Choose a PDF file to create a project" });
       return;
     }
 
     const formData = new FormData();
     formData.append("pdf", file);
-    if (pendingTocFile) {
-      formData.append("toc_json", pendingTocFile);
-    }
 
     setStatus({ kind: "loading", message: "Creating project" });
     try {
@@ -352,7 +395,6 @@ export function App() {
         throw new Error(await parseError(response));
       }
       const data = (await response.json()) as { project: Project };
-      setPendingTocFile(null);
       await loadProjects();
       openProject(data.project.id);
     } catch (error) {
@@ -361,6 +403,12 @@ export function App() {
         message: error instanceof Error ? error.message : "Failed to create project"
       });
     }
+  }
+
+  function createProjectFromInput(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    void createProject(file);
   }
 
   async function deleteProject(projectId: string) {
@@ -405,7 +453,6 @@ export function App() {
       lastSavedTocRef.current = nextTocText;
       setProject(data.project);
       await loadProjects();
-      setStatus({ kind: "success", message: "TOC JSON autosaved" });
     } catch (error) {
       if (tocSaveSequenceRef.current !== sequence) {
         return;
@@ -429,7 +476,6 @@ export function App() {
       lastSavedOffsetRef.current = String(offset);
       setProject(data.project);
       await loadProjects();
-      setStatus({ kind: "success", message: "Project offset autosaved" });
     } catch (error) {
       if (offsetSaveSequenceRef.current !== sequence) {
         return;
@@ -488,6 +534,7 @@ export function App() {
       return;
     }
 
+    setIsPreviewing(true);
     setStatus({ kind: "loading", message: "Applying TOC to PDF" });
     try {
       await flushAutosave();
@@ -512,6 +559,8 @@ export function App() {
         kind: "error",
         message: error instanceof Error ? error.message : "Failed to apply TOC"
       });
+    } finally {
+      setIsPreviewing(false);
     }
   }
 
@@ -684,9 +733,11 @@ export function App() {
       <SettingsView
         settings={settings}
         settingsDraft={settingsDraft}
-        status={status}
+        themePreference={themePreference}
         onSettingsDraftChange={setSettingsDraft}
+        onThemePreferenceChange={setThemePreference}
         onBack={leaveSettings}
+        onOpenHome={returnHome}
         onSave={saveSettings}
       />
     );
@@ -697,10 +748,9 @@ export function App() {
       <>
         <HomeView
           projects={projects}
-          pendingTocFile={pendingTocFile}
           status={status}
-          onPendingTocFileChange={setPendingTocFile}
-          onCreateProject={(event) => void createProject(event)}
+          onCreateProject={createProject}
+          onCreateProjectInput={createProjectFromInput}
           onOpenProject={openProject}
           onDeleteProject={requestProjectDelete}
           onOpenSettings={openSettings}
@@ -731,7 +781,10 @@ export function App() {
         tocText={tocText}
         pageOffset={pageOffset}
         status={status}
+        theme={resolvedTheme}
         canUseProjectActions={canUseProjectActions}
+        isPreviewing={isPreviewing}
+        isGenerating={activeGenerationJobId !== null}
         previewPdf={previewPdf}
         pdfVersion={pdfVersion}
         isResizing={isResizing}
@@ -742,6 +795,7 @@ export function App() {
         minSplitPercent={MIN_SPLIT_PERCENT}
         maxSplitPercent={MAX_SPLIT_PERCENT}
         onReturnHome={returnHome}
+        onOpenSettings={openSettings}
         onPageOffsetChange={setPageOffset}
         onOpenGenerateDialog={() => setGenerateDialogOpen(true)}
         onApplyPreview={() => void applyPreview()}

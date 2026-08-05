@@ -1,35 +1,41 @@
 import type { Dispatch, SetStateAction } from "react";
-import { ArrowLeft, Save, Settings } from "lucide-react";
-import type { SettingsDraft, SettingsState, Status } from "../types";
-import { StatusLine } from "./StatusLine";
+import { ArrowLeft, Moon, Save, Sun } from "lucide-react";
+import type { ThemePreference } from "../App";
+import type { SettingsDraft, SettingsState } from "../types";
+import { AppNavigation } from "./AppNavigation";
 
 type SettingsViewProps = {
   settings: SettingsState | null;
   settingsDraft: SettingsDraft;
-  status: Status;
+  themePreference: ThemePreference;
   onSettingsDraftChange: Dispatch<SetStateAction<SettingsDraft>>;
+  onThemePreferenceChange: (value: ThemePreference) => void;
   onBack: () => void;
+  onOpenHome: () => void;
   onSave: () => void;
 };
 
 export function SettingsView({
   settings,
   settingsDraft,
-  status,
+  themePreference,
   onSettingsDraftChange,
+  onThemePreferenceChange,
   onBack,
+  onOpenHome,
   onSave
 }: SettingsViewProps) {
   return (
     <main className="app-shell settings-shell">
-      <header className="topbar">
-        <div className="brand">
-          <Settings size={22} aria-hidden="true" />
+      <AppNavigation active="settings" onHome={onOpenHome} onSettings={() => undefined} />
+      <header className="app-header">
+        <div>
+          <p className="eyebrow">Preferences</p>
           <div>
-            <h1>LLM Settings</h1>
+            <h1>Settings</h1>
           </div>
         </div>
-        <div className="toolbar">
+        <div className="header-actions">
           <button className="secondary-action" type="button" onClick={onBack}>
             <ArrowLeft size={16} />
             Back
@@ -41,7 +47,27 @@ export function SettingsView({
         </div>
       </header>
 
-      <section className="settings-panel">
+      <section className="settings-panel app-content-panel">
+        <section className="settings-group" aria-labelledby="appearance-heading">
+          <div className="settings-group-header">
+            <div>
+              <p className="section-kicker">Appearance</p>
+              <h2 id="appearance-heading">Theme</h2>
+            </div>
+          </div>
+          <div className="theme-segmented" role="group" aria-label="Color theme">
+            <button className={themePreference === "system" ? "active" : ""} type="button" onClick={() => onThemePreferenceChange("system")}>System</button>
+            <button className={themePreference === "light" ? "active" : ""} type="button" onClick={() => onThemePreferenceChange("light")}><Sun size={15} /> Light</button>
+            <button className={themePreference === "dark" ? "active" : ""} type="button" onClick={() => onThemePreferenceChange("dark")}><Moon size={15} /> Dark</button>
+          </div>
+        </section>
+        <section className="settings-group" aria-labelledby="connection-heading">
+          <div className="settings-group-header">
+            <div>
+              <p className="section-kicker">Generation</p>
+              <h2 id="connection-heading">LLM connection</h2>
+            </div>
+          </div>
         <div className="settings-form">
           <label>
             <span>Base URL</span>
@@ -81,7 +107,7 @@ export function SettingsView({
             trusted local workspace.
           </p>
         </div>
-        <StatusLine status={status} />
+        </section>
       </section>
     </main>
   );

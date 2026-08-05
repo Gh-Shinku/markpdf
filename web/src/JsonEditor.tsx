@@ -7,6 +7,7 @@ import "monaco-editor/esm/vs/language/json/monaco.contribution";
 
 type JsonEditorProps = {
   value: string;
+  theme: "light" | "dark";
   onChange: (value: string) => void;
 };
 
@@ -88,7 +89,7 @@ function createModel(value: string): monaco.editor.ITextModel {
 }
 
 export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function JsonEditor(
-  { value, onChange },
+  { value, theme, onChange },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -119,7 +120,7 @@ export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function
     const editor = monaco.editor.create(hostRef.current, {
       model,
       language: "json",
-      theme: "vs",
+      theme: theme === "dark" ? "vs-dark" : "vs",
       automaticLayout: true,
       minimap: { enabled: false },
       wordWrap: "on",
@@ -169,6 +170,10 @@ export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function
       modelRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    monaco.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
+  }, [theme]);
 
   useEffect(() => {
     const editor = editorRef.current;
