@@ -106,6 +106,57 @@ class TestIndentLevelAssembly:
         assert tree[0]["children"][1]["title"] == "Chapter 2"
         assert tree[1]["title"] == "Part II"
 
+    def test_numbered_entries_nest_under_chapter_without_indent(self) -> None:
+        tree = _tree_of(
+            [
+                _flat("Preface", 9, None),
+                _flat("Chapter 1", None, None),
+                _flat("1. Introduction", 1, None),
+                _flat("1.1 Section", 2, None),
+                _flat("2. Theory", 3, None),
+                _flat("Chapter 2", 13, None),
+                _flat("1. Introduction", 13, None),
+            ]
+        )
+        assert [node["title"] for node in tree] == ["Preface", "Chapter 1", "Chapter 2"]
+        assert [c["title"] for c in tree[1]["children"]] == [
+            "1. Introduction",
+            "2. Theory",
+        ]
+        assert tree[1]["children"][0]["children"][0]["title"] == "1.1 Section"
+
+    def test_monotonic_filter_keeps_front_matter_page_reset(self) -> None:
+        extractor = FlatExtractor(toc_start=0, toc_end=1)
+        filtered = extractor._filter_anomalies_by_monotonic_page(
+            [
+                _flat("Preface", 9, 0),
+                _flat("Acknowledgments", 11, 0),
+                _flat("Chapter 1", None, 0),
+                _flat("1. Introduction", 1, 0),
+                _flat("2. Theory of Feedback Control", 1, 0),
+            ]
+        )
+        # 前置页页码(9, 11)高于正文第一页(1):回退但文本不重复,必须保留。
+        assert [item["text"] for item in filtered] == [
+            "Preface",
+            "Acknowledgments",
+            "Chapter 1",
+            "1. Introduction",
+            "2. Theory of Feedback Control",
+        ]
+
+    def test_monotonic_filter_still_drops_repeated_regressions(self) -> None:
+        extractor = FlatExtractor(toc_start=0, toc_end=1)
+        filtered = extractor._filter_anomalies_by_monotonic_page(
+            [
+                _flat("Chapter 1", 1, 0),
+                _flat("1. Introduction", 2, 0),
+                _flat("Chapter 1", 1, 0),  # 页眉噪声:页码回退且文本重复
+                _flat("1. Introduction", 1, 0),  # 页眉噪声
+            ]
+        )
+        assert [item["text"] for item in filtered] == ["Chapter 1", "1. Introduction"]
+
     def test_missing_indent_falls_back_to_heuristics(self) -> None:
         tree = _tree_of(
             [
@@ -116,15 +167,40 @@ class TestIndentLevelAssembly:
         )
         assert tree[0]["children"][0]["title"] == "1.1 Section"
 
-    def test_heal_cross_page_keeps_indent(self) -> None:
+    def test_heal_cross_page_merges_continuation_across_pages(self) -> None:
         extractor = FlatExtractor(toc_start=0, toc_end=1)
         healed = extractor.assembler._heal_cross_page(
             [
-                _flat("Chapter 1: A Long", 1, 1),
-                _flat("Title", None, 1),
+                {"text": "Chapter 1: A Long", "page": 1, "indent": 1, "_page_index": 0},
+                {"text": "Title", "page": None, "indent": 1, "_page_index": 1},
             ]
         )
         assert healed == [{"text": "Chapter 1: A LongTitle", "page": 1, "indent": 1}]
+
+    def test_heal_keeps_same_page_null_entry_independent(self) -> None:
+        extractor = FlatExtractor(toc_start=0, toc_end=0)
+        healed = extractor.assembler._heal_cross_page(
+            [
+                {"text": "Acknowledgments", "page": 11, "indent": 0, "_page_index": 0},
+                {"text": "Chapter 1 STOCHASTIC CONTROL", "page": None, "indent": 0, "_page_index": 0},
+            ]
+        )
+        assert healed == [
+            {"text": "Acknowledgments", "page": 11, "indent": 0},
+            {"text": "Chapter 1 STOCHASTIC CONTROL", "page": None, "indent": 0},
+        ]
+
+    def test_missing_page_inherited_from_first_child(self) -> None:
+        tree = _tree_of(
+            [
+                _flat("Chapter 1", None, 0),
+                _flat("1. Introduction", 1, 1),
+                _flat("Chapter 2", None, 0),
+                _flat("1. Introduction", 13, 1),
+            ]
+        )
+        assert tree[0]["page"] == 1
+        assert tree[1]["page"] == 13
 
     def test_roman_page_entries_excluded_from_final_tree(self) -> None:
         extractor = FlatExtractor(toc_start=0, toc_end=0)

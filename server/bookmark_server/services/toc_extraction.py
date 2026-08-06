@@ -27,7 +27,8 @@ DEFAULT_FLAT_PROMPT = (
     "4. **Filtering**: Ignore headers, footers, and decorative elements.\n"
     "5. **Verbatim**: Keep the original numbering (e.g., '1.2.3', 'Appendix A') within the 'text' field.\n"
     "6. **Indent Level**: Set 'indent' to the visual indentation depth of each entry relative to the leftmost ToC column on this page: 0 for top-level entries, and 1 for each deeper indentation level. Judge from indentation and font size, and keep the scale consistent within the page.\n"
-    "7. **Page Numbers**: Copy the printed page number exactly as shown, as a string (e.g. '12' or 'vii'), or set to null when not visible. Roman-numeral pages are ignored by the reader, so skip such entries entirely.\n\n"
+    "7. **Page Numbers**: Copy the printed page number exactly as shown, as a string (e.g. '12'), or set to null when not visible. Roman-numeral pages are ignored by the reader, so skip such entries entirely.\n"
+    "8. **Missing Page Numbers**: If an entry has no printed page number (e.g. a 'Chapter 1' heading), copy the page of the first entry that follows it within the same chapter; keep null only when no such page exists.\n\n"
     "### Output Format:\n"
     "Return ONLY a JSON array. No markdown, no conversational text.\n"
     'Schema: [{"text": "Full Title String", "page": string_or_null, "indent": integer}, ...]'
@@ -144,7 +145,8 @@ class TOCAssembler:
     def assemble(self, flat_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         healed = self._heal_cross_page(flat_items)
         enriched = self._assign_levels(healed)
-        return self._build_tree(enriched)
+        tree = self._build_tree(enriched)
+        return self._inherit_missing_pages(tree)
 
     def _heal_cross_page(self, flat_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         healed: list[dict[str, Any]] = []
@@ -155,20 +157,64 @@ class TOCAssembler:
                 continue
 
             if page is None and healed:
-                previous_text = healed[-1]["text"]
-                healed[-1]["text"] = f"{previous_text}{text}"
-                continue
+                previous = healed[-1]
+                # 仅合并跨页续行:该条目是下一页首条(page 无值)且上一页末条
+                # 已带页码。同页内的 null-page 条目(如无页码的章节标题)
+                # 保持独立,避免被误拼接进前一条目。
+                previous_index = previous.get("_page_index")
+                if (
+                    previous_index is not None
+                    and item.get("_page_index") != previous_index
+                ):
+                    previous["text"] = f"{previous['text']}{text}"
+                    continue
 
-            healed.append({"text": text, "page": page, "indent": item.get("indent")})
+            healed.append(
+                {
+                    "text": text,
+                    "page": page,
+                    "indent": item.get("indent"),
+                    "_page_index": item.get("_page_index"),
+                }
+            )
 
+        for healed_item in healed:
+            healed_item.pop("_page_index", None)
         return healed
 
-    def _detect_level(self, text: str, previous_level: int) -> int:
+    @staticmethod
+    def _inherit_missing_pages(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Fill null pages from the first descendant that carries a page.
+
+        Chapter headings often have no printed page number; without this pass
+        they would be dropped by prune_null_page_nodes. Runs after assembly so
+        prompt violations still produce a usable tree.
+        """
+        def fill(node: dict[str, Any]) -> int | None:
+            if node.get("page") is not None:
+                return node["page"]
+            for child in node.get("children", []):
+                inherited = fill(child)
+                if inherited is not None:
+                    node["page"] = inherited
+                    break
+            return node.get("page")
+
+        for node in nodes:
+            fill(node)
+        return nodes
+
+    def _detect_level(self, text: str, previous_level: int, chapter_level: int | None) -> int:
         match = self._numbering_re.match(text)
         if match:
             numbering = match.group(1).rstrip(".")
             segments = [segment for segment in numbering.split(".") if segment]
-            return max(1, len(segments))
+            depth = max(1, len(segments))
+            if chapter_level is not None:
+                # 章节标题(如 'Chapter 1')之后的编号条目相对章节偏移,
+                # 即 '1.' 是章内第一级,'1.1' 是第二级。
+                return max(1, chapter_level + depth)
+            return depth
 
         leading_spaces = len(text) - len(text.lstrip(" "))
         if leading_spaces > 0:
@@ -188,10 +234,15 @@ class TOCAssembler:
         enriched: list[dict[str, Any]] = []
         ancestors: list[tuple[int, int]] = []  # (level, indent) chain of open ancestors
         previous_level = 1
+        chapter_level: int | None = None
         for item in flat_items:
             indent = item.get("indent")
             if indent is None:
-                level = self._detect_level(item["text"], previous_level=previous_level)
+                level = self._detect_level(
+                    item["text"], previous_level=previous_level, chapter_level=chapter_level
+                )
+                if self._is_chapter_heading(item["text"]):
+                    chapter_level = level
             else:
                 level = self._level_from_indent(int(indent), ancestors)
                 # Mirror the depth clamp applied by _build_tree so that a
@@ -214,6 +265,15 @@ class TOCAssembler:
                 }
             )
         return enriched
+
+    @staticmethod
+    def _is_chapter_heading(text: str) -> bool:
+        lower_text = text.lower()
+        return (
+            lower_text.startswith("part")
+            or lower_text.startswith("chapter")
+            or (text.startswith("第") and ("部分" in text or "章" in text))
+        )
 
     def _level_from_indent(self, indent: int, stack: list[tuple[int, int]]) -> int:
         """Derive the tree level from the VLM-reported indent.
@@ -322,16 +382,22 @@ class FlatExtractor(BaseExtractor):
     ) -> list[dict[str, Any]]:
         filtered: list[dict[str, Any]] = []
         last_page: int | None = None
+        seen_texts: set[str] = set()
 
         for item in flat_items:
             page = item.get("page")
+            text_key = str(item.get("text", "")).strip().lower()
 
             if page is not None and last_page is not None and page < last_page:
-                # Drop abnormal entries (typically header/footer OCR noise)
-                # when page sequence breaks non-decreasing monotonicity.
-                continue
+                # ToC pages are not monotonic: front matter (Preface etc.)
+                # often carries a higher page number than the first body page.
+                # Only drop entries whose page regresses AND whose text repeats
+                # (the typical header/footer OCR noise pattern).
+                if text_key in seen_texts:
+                    continue
 
             filtered.append(item)
+            seen_texts.add(text_key)
             if page is not None:
                 last_page = page
 
@@ -360,8 +426,11 @@ class FlatExtractor(BaseExtractor):
         page_flat_items: list[list[dict[str, Any]]],
     ) -> list[dict[str, Any]]:
         merged_flat_items: list[dict[str, Any]] = []
-        for page_items in page_flat_items:
-            merged_flat_items.extend(page_items)
+        for page_index, page_items in enumerate(page_flat_items):
+            for item in page_items:
+                marked = dict(item)
+                marked["_page_index"] = page_index
+                merged_flat_items.append(marked)
 
         merged_flat_items = self._filter_anomalies_by_monotonic_page(merged_flat_items)
         assembled_tree = self.assembler.assemble(merged_flat_items)

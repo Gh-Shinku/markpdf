@@ -54,7 +54,8 @@ LEGACY_FLAT_PROMPT = (
     "4. **Filtering**: Ignore headers, footers, and decorative elements.\n"
     "5. **Verbatim**: Keep the original numbering (e.g., '1.2.3', 'Appendix A') within the 'text' field.\n"
     "6. **Indent Level**: Set 'indent' to the visual indentation depth of each entry relative to the leftmost ToC column on this page: 0 for top-level entries, and 1 for each deeper indentation level. Judge from indentation and font size, and keep the scale consistent within the page.\n"
-    "7. **Page Numbers**: Copy the printed page number exactly as shown, as a string (e.g. '12' or 'vii'), or set to null when not visible. Roman-numeral pages are ignored by the reader, so skip such entries entirely.\n\n"
+    "7. **Page Numbers**: Copy the printed page number exactly as shown, as a string (e.g. '12' or 'vii'), or set to null when not visible. Roman-numeral pages are ignored by the reader, so skip such entries entirely.\n"
+    "8. **Missing Page Numbers**: If an entry has no printed page number (e.g. a 'Chapter 1' heading), copy the page of the first entry that follows it within the same chapter; keep null only when no such page exists.\n\n"
     "### Output Format:\n"
     "Return ONLY a JSON array. No markdown, no conversational text.\n"
     'Schema: [{"text": "Full Title String", "page": string_or_null, "indent": integer}, ...]'
