@@ -20,6 +20,13 @@ serves the API and the web UI on one port, and opens the browser):
 The launcher stays in the foreground so you can watch the logs and the app
 URL. Press `Ctrl+C` to stop.
 
+On Windows, use the batch launcher instead:
+
+```bat
+bookmark.bat              :: http://127.0.0.1:8000
+bookmark.bat --port 8123  :: pick another port
+```
+
 ### Development mode
 
 Start the backend:
