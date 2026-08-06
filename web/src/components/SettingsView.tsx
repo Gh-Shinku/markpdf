@@ -12,18 +12,18 @@ import {
   Zap,
 } from "lucide-react";
 import type { ThemePreference } from "../hooks/useThemePreference";
-import type { TocPromptMode, TocPrompts, VlmProvider, VlmProviderDraft } from "../types";
+import type { VlmProvider, VlmProviderDraft } from "../types";
 import { AppNavigation } from "./AppNavigation";
 
 type SettingsViewProps = {
   providers: VlmProvider[];
   drafts: VlmProviderDraft[];
-  prompts: TocPrompts;
-  defaultPrompts: TocPrompts;
+  prompt: string;
+  defaultPrompt: string;
   themePreference: ThemePreference;
   testingProviderId: string | null;
   onProvidersChange: Dispatch<SetStateAction<VlmProviderDraft[]>>;
-  onPromptsChange: Dispatch<SetStateAction<TocPrompts>>;
+  onPromptChange: Dispatch<SetStateAction<string>>;
   onThemePreferenceChange: (value: ThemePreference) => void;
   onBack: () => void;
   onOpenHome: () => void;
@@ -37,12 +37,12 @@ const blankProvider = (): VlmProviderDraft => ({ name: "", baseUrl: "", model: "
 export function SettingsView({
   providers,
   drafts,
-  prompts,
-  defaultPrompts,
+  prompt,
+  defaultPrompt,
   themePreference,
   testingProviderId,
   onProvidersChange,
-  onPromptsChange,
+  onPromptChange,
   onThemePreferenceChange,
   onBack,
   onOpenHome,
@@ -84,11 +84,11 @@ export function SettingsView({
     );
     setModalDraft(null);
   }
-  function restorePrompt(mode: TocPromptMode) {
-    onPromptsChange((current) => ({ ...current, [mode]: defaultPrompts[mode] }));
+  function restorePrompt() {
+    onPromptChange(defaultPrompt);
   }
   const promptVariableHint =
-    "Available variables: {toc_start}, {toc_end}, {pdf_name}. Leave a template empty to use the built-in default.";
+    "Available variables: {toc_start}, {toc_end}, {pdf_name}. Leave the template empty to use the built-in default.";
 
   return (
     <main className="app-shell settings-shell">
@@ -238,46 +238,18 @@ export function SettingsView({
           <p className="prompt-hint">{promptVariableHint}</p>
           <div className="prompt-field">
             <div className="prompt-field-header">
-              <strong>Flat page extraction</strong>
-              <button
-                className="secondary-action"
-                type="button"
-                onClick={() => restorePrompt("flat")}
-              >
+              <strong>Page extraction prompt</strong>
+              <button className="secondary-action" type="button" onClick={restorePrompt}>
                 Restore default
               </button>
             </div>
             <textarea
               className="prompt-textarea"
-              aria-label="Flat page extraction prompt template"
+              aria-label="Page extraction prompt template"
               rows={12}
               spellCheck={false}
-              value={prompts.flat}
-              onChange={(event) =>
-                onPromptsChange((current) => ({ ...current, flat: event.target.value }))
-              }
-            />
-          </div>
-          <div className="prompt-field">
-            <div className="prompt-field-header">
-              <strong>Tree extraction</strong>
-              <button
-                className="secondary-action"
-                type="button"
-                onClick={() => restorePrompt("tree")}
-              >
-                Restore default
-              </button>
-            </div>
-            <textarea
-              className="prompt-textarea"
-              aria-label="Tree extraction prompt template"
-              rows={12}
-              spellCheck={false}
-              value={prompts.tree}
-              onChange={(event) =>
-                onPromptsChange((current) => ({ ...current, tree: event.target.value }))
-              }
+              value={prompt}
+              onChange={(event) => onPromptChange(event.target.value)}
             />
           </div>
         </section>

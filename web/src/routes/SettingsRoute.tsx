@@ -13,7 +13,7 @@ import {
   settingsKey,
   testProvider,
 } from "../features/settings/api";
-import type { TocPrompts, VlmProviderDraft } from "../types";
+import type { VlmProviderDraft } from "../types";
 
 export function SettingsRoute() {
   const navigate = useNavigate();
@@ -23,7 +23,7 @@ export function SettingsRoute() {
   const providersQuery = useQuery({ queryKey: settingsKey, queryFn: getProviders });
   const promptsQuery = useQuery({ queryKey: promptsKey, queryFn: getPrompts });
   const [drafts, setDrafts] = useState<VlmProviderDraft[]>([]);
-  const [promptDrafts, setPromptDrafts] = useState<TocPrompts>({ flat: "", tree: "" });
+  const [promptDraft, setPromptDraft] = useState<string>("");
   useEffect(() => {
     if (providersQuery.data)
       setDrafts(
@@ -37,12 +37,12 @@ export function SettingsRoute() {
       );
   }, [providersQuery.data]);
   useEffect(() => {
-    if (promptsQuery.data) setPromptDrafts(promptsQuery.data.prompts);
+    if (promptsQuery.data) setPromptDraft(promptsQuery.data.prompt);
   }, [promptsQuery.data]);
   const saveMutation = useMutation({
     mutationFn: async () => {
       const providers = await saveProviders(drafts);
-      const promptsResponse = await savePrompts(promptDrafts);
+      const promptsResponse = await savePrompts(promptDraft);
       return { providers, promptsResponse };
     },
     onSuccess: ({ providers, promptsResponse }) => {
@@ -57,7 +57,7 @@ export function SettingsRoute() {
           apiKey: "",
         })),
       );
-      setPromptDrafts(promptsResponse.prompts);
+      setPromptDraft(promptsResponse.prompt);
       toast.success("Settings saved");
     },
     onError: (error) => toast.error(error.message),
@@ -79,12 +79,12 @@ export function SettingsRoute() {
     <SettingsView
       providers={providersQuery.data ?? []}
       drafts={drafts}
-      prompts={promptDrafts}
-      defaultPrompts={promptsQuery.data?.defaults ?? { flat: "", tree: "" }}
+      prompt={promptDraft}
+      defaultPrompt={promptsQuery.data?.default ?? ""}
       themePreference={preference}
       testingProviderId={testMutation.isPending ? testMutation.variables : null}
       onProvidersChange={setDrafts}
-      onPromptsChange={setPromptDrafts}
+      onPromptChange={setPromptDraft}
       onThemePreferenceChange={setPreference}
       onBack={() => navigate(from && from !== "/settings" ? from : "/")}
       onOpenHome={() => navigate("/")}

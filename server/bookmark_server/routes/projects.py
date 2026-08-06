@@ -14,7 +14,7 @@ import fitz
 from ..core import apply_toc_to_pdf
 from ..services.generation_jobs import generation_job_store
 from ..services.projects import store
-from ..services.toc_extraction import DEFAULT_PROMPTS, extract_toc_json, request_toc_from_vlm
+from ..services.toc_extraction import DEFAULT_FLAT_PROMPT, extract_toc_json, request_toc_from_vlm
 
 
 router = APIRouter(tags=["projects"])
@@ -71,8 +71,7 @@ class ProvidersPayload(BaseModel):
 
 
 class PromptsPayload(BaseModel):
-    flat: str | None = None
-    tree: str | None = None
+    prompt: str | None = None
 
 
 class TocFileApplyPayload(BaseModel):
@@ -180,8 +179,7 @@ def _run_generate_toc_job(
             dpi=220,
             cache_dir=store.cache_dir(),
             overwrite_cache=False,
-            mode="flat",
-            prompt=store.read_toc_prompts()["flat"],
+            prompt=store.read_toc_prompt(),
             on_flat_page_event=record_page_progress,
         )
         generation_job_store.update_progress(
@@ -523,24 +521,23 @@ def save_llm_providers(payload: ProvidersPayload) -> dict[str, Any]:
 @router.get("/settings/prompts")
 def get_toc_prompts() -> dict[str, Any]:
     return {
-        "prompts": store.read_toc_prompts(),
-        "defaults": dict(DEFAULT_PROMPTS),
+        "prompt": store.read_toc_prompt(),
+        "default": DEFAULT_FLAT_PROMPT,
     }
 
 
 @router.put("/settings/prompts")
 def save_toc_prompts(payload: PromptsPayload) -> dict[str, Any]:
-    prompts = {"flat": payload.flat or "", "tree": payload.tree or ""}
-    for mode, text in prompts.items():
-        if len(text) > MAX_PROMPT_LENGTH:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Prompt for '{mode}' exceeds {MAX_PROMPT_LENGTH} characters",
-            )
-    saved = store.save_toc_prompts(prompts)
+    prompt = payload.prompt or ""
+    if len(prompt) > MAX_PROMPT_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Prompt exceeds {MAX_PROMPT_LENGTH} characters",
+        )
+    saved = store.save_toc_prompt(prompt)
     return {
-        "prompts": saved,
-        "defaults": dict(DEFAULT_PROMPTS),
+        "prompt": saved,
+        "default": DEFAULT_FLAT_PROMPT,
     }
 
 

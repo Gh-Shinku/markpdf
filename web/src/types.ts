@@ -61,10 +61,6 @@ export type VlmProviderDraft = {
   apiKey: string;
 };
 
-export type TocPromptMode = "flat" | "tree";
-
-export type TocPrompts = Record<TocPromptMode, string>;
-
 export type TocFile = {
   id: string;
   name: string;

@@ -5,17 +5,17 @@ import { SettingsView } from "./SettingsView";
 afterEach(cleanup);
 
 describe("SettingsView", () => {
-  it("renders prompt template editors with current values", () => {
+  it("renders the prompt template editor with the current value", () => {
     render(
       <SettingsView
         providers={[]}
         drafts={[]}
-        prompts={{ flat: "flat prompt text", tree: "tree prompt text" }}
-        defaultPrompts={{ flat: "default flat", tree: "default tree" }}
+        prompt="current prompt"
+        defaultPrompt="default prompt"
         themePreference="system"
         testingProviderId={null}
         onProvidersChange={vi.fn()}
-        onPromptsChange={vi.fn()}
+        onPromptChange={vi.fn()}
         onThemePreferenceChange={vi.fn()}
         onBack={vi.fn()}
         onOpenHome={vi.fn()}
@@ -25,25 +25,23 @@ describe("SettingsView", () => {
       />,
     );
 
-    const flatEditor = screen.getByLabelText("Flat page extraction prompt template");
-    const treeEditor = screen.getByLabelText("Tree extraction prompt template");
-    expect((flatEditor as HTMLTextAreaElement).value).toBe("flat prompt text");
-    expect((treeEditor as HTMLTextAreaElement).value).toBe("tree prompt text");
+    const editor = screen.getByLabelText("Page extraction prompt template");
+    expect((editor as HTMLTextAreaElement).value).toBe("current prompt");
     expect(screen.getByText(/Available variables:/)).toBeTruthy();
   });
 
-  it("restores a template to its default value", () => {
-    const onPromptsChange = vi.fn();
+  it("restores the template to its default value", () => {
+    const onPromptChange = vi.fn();
     render(
       <SettingsView
         providers={[]}
         drafts={[]}
-        prompts={{ flat: "edited", tree: "" }}
-        defaultPrompts={{ flat: "default flat", tree: "default tree" }}
+        prompt="edited"
+        defaultPrompt="default prompt"
         themePreference="system"
         testingProviderId={null}
         onProvidersChange={vi.fn()}
-        onPromptsChange={onPromptsChange}
+        onPromptChange={onPromptChange}
         onThemePreferenceChange={vi.fn()}
         onBack={vi.fn()}
         onOpenHome={vi.fn()}
@@ -53,14 +51,9 @@ describe("SettingsView", () => {
       />,
     );
 
-    const restoreButtons = screen.getAllByRole("button", { name: "Restore default" });
-    fireEvent.click(restoreButtons[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Restore default" }));
 
-    expect(onPromptsChange).toHaveBeenCalledTimes(1);
-    const updater = onPromptsChange.mock.calls[0][0];
-    expect(updater({ flat: "edited", tree: "other" })).toEqual({
-      flat: "default flat",
-      tree: "other",
-    });
+    expect(onPromptChange).toHaveBeenCalledTimes(1);
+    expect(onPromptChange).toHaveBeenCalledWith("default prompt");
   });
 });

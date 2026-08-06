@@ -267,7 +267,6 @@ def test_generate_toc_creates_candidate_file(tmp_path, monkeypatch) -> None:
     def fake_extract_toc_json(**kwargs):
         assert kwargs["toc_start"] == 0
         assert kwargs["toc_end"] == 1
-        assert kwargs["mode"] == "flat"
         return (
             [{"title": "Generated", "page": 1, "attribute": "relative", "children": []}],
             Path("cache.json"),

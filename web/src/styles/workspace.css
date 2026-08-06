@@ -1,6 +1,29 @@
 .route-fallback-shell {
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr);
   place-items: center;
   padding: 24px;
+}
+
+.workspace-shell {
+  animation: workspace-enter 320ms ease-out;
+}
+
+@keyframes workspace-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-shell {
+    animation: none;
+  }
 }
 
 .route-fallback {

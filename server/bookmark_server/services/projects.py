@@ -12,7 +12,7 @@ from uuid import uuid4
 import fitz
 
 from ..core import flatten_to_pymupdf_toc, parse_toc_items, validate_toc_json_structure
-from .toc_extraction import DEFAULT_PROMPTS
+from .toc_extraction import DEFAULT_FLAT_PROMPT
 
 
 DEFAULT_TOC = [
@@ -330,29 +330,27 @@ class ProjectStore:
             raise KeyError(provider_id)
         return provider
 
-    def read_toc_prompts(self) -> dict[str, str]:
-        """Return the effective ToC prompts (stored value or built-in default)."""
-        stored = self._read_settings().get("prompts")
-        if not isinstance(stored, dict):
-            stored = {}
-        result: dict[str, str] = {}
-        for mode, default in DEFAULT_PROMPTS.items():
-            value = stored.get(mode)
-            result[mode] = value if isinstance(value, str) and value.strip() else default
-        return result
+    def read_toc_prompt(self) -> str:
+        """Return the effective ToC prompt (stored override or built-in default)."""
+        settings = self._read_settings()
+        value = settings.get("prompt")
+        if not isinstance(value, str) or not value.strip():
+            # Migrate the legacy {prompts: {flat, tree}} layout.
+            legacy = settings.get("prompts")
+            if isinstance(legacy, dict):
+                value = legacy.get("flat")
+        if not isinstance(value, str) or not value.strip():
+            return DEFAULT_FLAT_PROMPT
+        return value
 
-    def save_toc_prompts(self, prompts: dict[str, str]) -> dict[str, str]:
-        """Persist ToC prompt overrides, preserving the providers key."""
-        normalized: dict[str, str] = {}
-        for mode, default in DEFAULT_PROMPTS.items():
-            value = prompts.get(mode)
-            if not isinstance(value, str):
-                value = ""
-            normalized[mode] = value.strip()
+    def save_toc_prompt(self, prompt: str) -> str:
+        """Persist the ToC prompt override, preserving the providers key."""
         raw = self._read_settings()
-        raw["prompts"] = normalized
+        raw["prompt"] = prompt.strip()
+        if "prompts" in raw:
+            del raw["prompts"]
         self._write_settings(raw)
-        return self.read_toc_prompts()
+        return self.read_toc_prompt()
 
     def record_provider_verification(self, provider_id: str, status: str, message: str) -> dict[str, Any]:
         providers = self.read_llm_providers()

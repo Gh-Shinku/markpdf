@@ -165,7 +165,9 @@ export function WorkspaceView({
   }
 
   return (
-    <main className={`app-shell${isResizing || isFileExplorerResizing ? " resizing" : ""}`}>
+    <main
+      className={`app-shell workspace-shell${isResizing || isFileExplorerResizing ? " resizing" : ""}`}
+    >
       <AppNavigation
         active="workspace"
         onHome={onReturnHome}

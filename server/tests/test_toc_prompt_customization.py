@@ -11,9 +11,8 @@ from bookmark_server.main import app
 from bookmark_server.routes import projects as projects_route
 from bookmark_server.services.projects import ProjectStore
 from bookmark_server.services.toc_extraction import (
-    DEFAULT_PROMPTS,
+    DEFAULT_FLAT_PROMPT,
     FlatExtractor,
-    TreeExtractor,
     find_matching_flat_raw_cache,
     make_cache_file_path,
     make_flat_pages_work_dir,
@@ -40,7 +39,9 @@ def _make_pdf(path: Path, page_count: int = 2) -> None:
     doc.close()
 
 
-# The pre-customization flat prompt, kept verbatim as a regression lock.
+# The default flat prompt, kept verbatim as a regression lock. It now asks
+# the VLM for an 'indent' level per entry, which the assembler uses to rebuild
+# the tree hierarchy.
 LEGACY_FLAT_PROMPT = (
     "Role: You are a high-precision OCR Data Entry Clerk.\n"
     "Task: Extract ToC entries from the current page as a FLAT list of items.\n\n"
@@ -51,29 +52,19 @@ LEGACY_FLAT_PROMPT = (
     "   - Remove leader dots (e.g., 'Chapter 1.......10' becomes text:'Chapter 1', page:10).\n"
     "3. **Page Range**: Only process the content visible on THIS page. Do not guess what's on the next page.\n"
     "4. **Filtering**: Ignore headers, footers, and decorative elements.\n"
-    "5. **Verbatim**: Keep the original numbering (e.g., '1.2.3', 'Appendix A') within the 'text' field.\n\n"
+    "5. **Verbatim**: Keep the original numbering (e.g., '1.2.3', 'Appendix A') within the 'text' field.\n"
+    "6. **Indent Level**: Set 'indent' to the visual indentation depth of each entry relative to the leftmost ToC column on this page: 0 for top-level entries, and 1 for each deeper indentation level. Judge from indentation and font size, and keep the scale consistent within the page.\n\n"
     "### Output Format:\n"
     "Return ONLY a JSON array. No markdown, no conversational text.\n"
-    'Schema: [{"text": "Full Title String", "page": integer_or_null}, ...]'
+    'Schema: [{"text": "Full Title String", "page": integer_or_null, "indent": integer}, ...]'
 )
 
 
 def test_default_flat_prompt_is_byte_identical_to_legacy() -> None:
     rendered = FlatExtractor(toc_start=0, toc_end=2, pdf_name="book").build_prompt()
     assert rendered == LEGACY_FLAT_PROMPT
-    assert rendered == DEFAULT_PROMPTS["flat"]
+    assert rendered == DEFAULT_FLAT_PROMPT
     assert "{toc_" not in rendered
-
-
-def test_default_tree_prompt_renders_one_based_pages() -> None:
-    rendered = TreeExtractor(toc_start=0, toc_end=2, pdf_name="book").build_prompt()
-    assert rendered == (
-        DEFAULT_PROMPTS["tree"]
-        .replace("{toc_start}", "1")
-        .replace("{toc_end}", "3")
-    )
-    assert "book pages 1 to 3" in rendered
-    assert "{toc_start}" not in rendered and "{toc_end}" not in rendered
 
 
 def test_custom_prompt_renders_placeholders_and_keeps_json_braces() -> None:
@@ -150,7 +141,7 @@ def test_find_matching_flat_raw_cache_legacy_record_matches_default_prompt_only(
 
     assert (
         find_matching_flat_raw_cache(
-            cache_dir, input_pdf, 0, 2, "model-x", 220, DEFAULT_PROMPTS["flat"]
+            cache_dir, input_pdf, 0, 2, "model-x", 220, DEFAULT_FLAT_PROMPT
         )
         == legacy
     )
@@ -187,65 +178,79 @@ def test_find_matching_flat_raw_cache_new_record_matches_prompt_strictly(tmp_pat
     )
 
 
-def test_store_prompts_round_trip_and_empty_resets(tmp_path: Path) -> None:
+def test_store_prompt_round_trip_and_empty_resets(tmp_path: Path) -> None:
     store = ProjectStore(tmp_path / "data")
-    assert store.read_toc_prompts() == DEFAULT_PROMPTS
+    assert store.read_toc_prompt() == DEFAULT_FLAT_PROMPT
 
-    saved = store.save_toc_prompts({"flat": "  custom flat  ", "tree": "custom tree"})
-    assert saved == {"flat": "custom flat", "tree": "custom tree"}
-    assert store.read_toc_prompts() == {"flat": "custom flat", "tree": "custom tree"}
+    saved = store.save_toc_prompt("  custom prompt  ")
+    assert saved == "custom prompt"
+    assert store.read_toc_prompt() == "custom prompt"
 
-    assert store.save_toc_prompts({"flat": "   ", "tree": ""}) == DEFAULT_PROMPTS
+    assert store.save_toc_prompt("   ") == DEFAULT_FLAT_PROMPT
 
 
-def test_store_providers_and_prompts_coexist(tmp_path: Path) -> None:
+def test_store_migrates_legacy_prompts_dict(tmp_path: Path) -> None:
     store = ProjectStore(tmp_path / "data")
-    store.save_toc_prompts({"flat": "custom flat", "tree": "custom tree"})
+    settings_file = store.settings_file
+    settings_file.parent.mkdir(parents=True, exist_ok=True)
+    settings_file.write_text(
+        json.dumps({"providers": [], "prompts": {"flat": "legacy flat", "tree": "legacy tree"}}),
+        encoding="utf-8",
+    )
+    assert store.read_toc_prompt() == "legacy flat"
+
+    # Saving migrates to the flat 'prompt' key and drops the legacy layout.
+    assert store.save_toc_prompt("new prompt") == "new prompt"
+    raw = json.loads(settings_file.read_text(encoding="utf-8"))
+    assert raw["prompt"] == "new prompt"
+    assert "prompts" not in raw
+
+
+def test_store_providers_and_prompt_coexist(tmp_path: Path) -> None:
+    store = ProjectStore(tmp_path / "data")
+    store.save_toc_prompt("custom prompt")
 
     providers = store.save_llm_providers(
         [{"id": "p1", "name": "X", "base_url": "http://x", "model": "m", "api_key": "k"}]
     )
     assert providers[0]["id"] == "p1"
-    assert store.read_toc_prompts() == {"flat": "custom flat", "tree": "custom tree"}
+    assert store.read_toc_prompt() == "custom prompt"
 
-    store.save_toc_prompts({"flat": "new flat", "tree": ""})
+    store.save_toc_prompt("new prompt")
     assert store.get_llm_provider("p1")["name"] == "X"
-    assert store.read_toc_prompts()["flat"] == "new flat"
+    assert store.read_toc_prompt() == "new prompt"
 
     store.record_provider_verification("p1", "verified", "ok")
-    assert store.read_toc_prompts()["flat"] == "new flat"
+    assert store.read_toc_prompt() == "new prompt"
 
 
 def test_prompts_endpoints_round_trip(isolated_project_store: ProjectStore) -> None:
     get_response = client.get("/api/settings/prompts")
     assert get_response.status_code == 200
     body = get_response.json()
-    assert body["prompts"] == DEFAULT_PROMPTS
-    assert body["defaults"] == DEFAULT_PROMPTS
+    assert body["prompt"] == DEFAULT_FLAT_PROMPT
+    assert body["default"] == DEFAULT_FLAT_PROMPT
 
     put_response = client.put(
         "/api/settings/prompts",
-        json={"flat": "custom flat prompt", "tree": "custom tree prompt"},
+        json={"prompt": "custom prompt"},
     )
     assert put_response.status_code == 200
-    assert put_response.json()["prompts"] == {
-        "flat": "custom flat prompt",
-        "tree": "custom tree prompt",
-    }
+    assert put_response.json()["prompt"] == "custom prompt"
 
-    assert client.get("/api/settings/prompts").json()["prompts"]["flat"] == "custom flat prompt"
+    assert client.get("/api/settings/prompts").json()["prompt"] == "custom prompt"
 
 
 def test_prompts_endpoint_rejects_oversize_prompt(isolated_project_store: ProjectStore) -> None:
     response = client.put(
         "/api/settings/prompts",
-        json={"flat": "x" * 20001, "tree": ""},
+        json={"prompt": "x" * 20001},
     )
     assert response.status_code == 400
 
 
 def test_prompts_endpoint_blank_resets_to_default(isolated_project_store: ProjectStore) -> None:
-    client.put("/api/settings/prompts", json={"flat": "custom", "tree": "custom"})
-    response = client.put("/api/settings/prompts", json={"flat": "", "tree": "   "})
+    client.put("/api/settings/prompts", json={"prompt": "custom"})
+    response = client.put("/api/settings/prompts", json={"prompt": "   "})
     assert response.status_code == 200
-    assert response.json()["prompts"] == DEFAULT_PROMPTS
+    assert response.json()["prompt"] == DEFAULT_FLAT_PROMPT

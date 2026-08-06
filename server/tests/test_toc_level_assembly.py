@@ -1,0 +1,288 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+import fitz
+import pytest
+
+from bookmark_server.services import toc_extraction as te
+from bookmark_server.services.toc_extraction import (
+    FlatExtractor,
+    TOCAssembler,
+    correct_tree_levels,
+    extract_toc_json,
+)
+
+
+def _tree_of(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return TOCAssembler().assemble(items)
+
+
+def _flat(text: str, page: int | None, indent: int | None) -> dict[str, Any]:
+    return {"text": text, "page": page, "indent": indent}
+
+
+def _titles(nodes: list[dict[str, Any]]) -> list[str]:
+    result: list[str] = []
+    for node in nodes:
+        result.append(node["title"])
+        result.extend(_titles(node["children"]))
+    return result
+
+
+class TestIndentLevelAssembly:
+    def test_basic_indent_tree(self) -> None:
+        tree = _tree_of(
+            [
+                _flat("Chapter 1", 1, 0),
+                _flat("1.1 Section", 2, 1),
+                _flat("1.1.1 Sub", 3, 2),
+                _flat("1.2 Section", 4, 1),
+                _flat("Chapter 2", 5, 0),
+            ]
+        )
+        assert _titles(tree) == ["Chapter 1", "1.1 Section", "1.1.1 Sub", "1.2 Section", "Chapter 2"]
+        assert [node["title"] for node in tree] == ["Chapter 1", "Chapter 2"]
+        assert tree[0]["children"][0]["title"] == "1.1 Section"
+        assert tree[0]["children"][0]["children"][0]["title"] == "1.1.1 Sub"
+
+    def test_cross_page_indent_scale_jump_is_absorbed(self) -> None:
+        # Page 2 uses a coarser indent scale for its sub-entries (2 per level
+        # instead of 1); the dedent logic and depth clamp absorb the jump.
+        tree = _tree_of(
+            [
+                _flat("Chapter 1", 1, 0),
+                _flat("1.1 Section", 2, 1),
+                _flat("Chapter 2", 3, 0),
+                # page 2 starts here
+                _flat("2.1 Section", 4, 2),
+                _flat("2.2 Section", 5, 2),
+                _flat("Chapter 3", 6, 0),
+                _flat("3.1 Section", 7, 2),
+            ]
+        )
+        assert [node["title"] for node in tree] == ["Chapter 1", "Chapter 2", "Chapter 3"]
+        assert [c["title"] for c in tree[1]["children"]] == ["2.1 Section", "2.2 Section"]
+        assert [c["title"] for c in tree[2]["children"]] == ["3.1 Section"]
+
+    def test_skipped_level_is_clamped_to_one_level(self) -> None:
+        tree = _tree_of(
+            [
+                _flat("Chapter 1", 1, 0),
+                _flat("1.1 Section", 2, 1),
+                _flat("1.1.1 Sub", 3, 3),  # VLM skipped an indent level
+                _flat("1.1.1.1 Deep", 4, 4),
+            ]
+        )
+        assert tree[0]["children"][0]["children"][0]["title"] == "1.1.1 Sub"
+        assert tree[0]["children"][0]["children"][0]["children"][0]["title"] == "1.1.1.1 Deep"
+
+    def test_flattened_page_left_for_correction(self) -> None:
+        # A whole page whose entries were flattened by the VLM (all indent 0)
+        # cannot be recovered from indent alone; the tree keeps them as siblings
+        # and the LLM correction stage is expected to fix the nesting.
+        tree = _tree_of(
+            [
+                _flat("Chapter 1", 1, 0),
+                _flat("1.1 Section", 2, 0),
+                _flat("1.2 Section", 3, 0),
+            ]
+        )
+        assert [node["title"] for node in tree] == ["Chapter 1", "1.1 Section", "1.2 Section"]
+
+    def test_dedent_returns_to_ancestor_level(self) -> None:
+        tree = _tree_of(
+            [
+                _flat("Part I", 1, 0),
+                _flat("Chapter 1", 2, 1),
+                _flat("1.1 Section", 3, 2),
+                _flat("Chapter 2", 4, 1),
+                _flat("Part II", 5, 0),
+            ]
+        )
+        assert tree[0]["children"][0]["children"][0]["title"] == "1.1 Section"
+        assert tree[0]["children"][1]["title"] == "Chapter 2"
+        assert tree[1]["title"] == "Part II"
+
+    def test_missing_indent_falls_back_to_heuristics(self) -> None:
+        tree = _tree_of(
+            [
+                _flat("Chapter 1", 1, None),
+                _flat("  1.1 Section", 2, None),
+                _flat("1.2 Section", 3, None),
+            ]
+        )
+        assert tree[0]["children"][0]["title"] == "1.1 Section"
+
+    def test_heal_cross_page_keeps_indent(self) -> None:
+        extractor = FlatExtractor(toc_start=0, toc_end=1)
+        healed = extractor.assembler._heal_cross_page(
+            [
+                _flat("Chapter 1: A Long", 1, 1),
+                _flat("Title", None, 1),
+            ]
+        )
+        assert healed == [{"text": "Chapter 1: A LongTitle", "page": 1, "indent": 1}]
+
+
+class TestFlatListValidation:
+    def test_indent_accepted(self) -> None:
+        extractor = FlatExtractor(toc_start=0, toc_end=0)
+        assert extractor._validate_flat_list([_flat("A", 1, 2)]) == [
+            {"text": "A", "page": 1, "indent": 2}
+        ]
+
+    def test_missing_indent_accepted_for_legacy_cache(self) -> None:
+        extractor = FlatExtractor(toc_start=0, toc_end=0)
+        assert extractor._validate_flat_list([{"text": "A", "page": 1}]) == [
+            {"text": "A", "page": 1, "indent": None}
+        ]
+
+    def test_invalid_indent_rejected(self) -> None:
+        extractor = FlatExtractor(toc_start=0, toc_end=0)
+        for bad in (-1, 1.5, "1", True):
+            with pytest.raises(ValueError):
+                extractor._validate_flat_list([{"text": "A", "page": 1, "indent": bad}])
+
+
+class TestLevelCorrection:
+    def test_correction_applied(self, monkeypatch) -> None:
+        corrected = [
+            {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": []},
+        ]
+        monkeypatch.setattr(te, "request_llm_json", lambda **kwargs: json.dumps(corrected))
+        result = correct_tree_levels(
+            [{"title": "x", "page": 1, "attribute": "relative", "children": []}],
+            api_key="k",
+            base_url="http://x",
+            model="m",
+        )
+        assert result == corrected
+
+    def test_correction_failure_raises(self, monkeypatch) -> None:
+        def bad_response(**kwargs):
+            raise RuntimeError("api down")
+
+        monkeypatch.setattr(te, "request_llm_json", bad_response)
+        with pytest.raises(RuntimeError):
+            correct_tree_levels(
+                [{"title": "x", "page": 1, "attribute": "relative", "children": []}],
+                api_key="k",
+                base_url="http://x",
+                model="m",
+            )
+
+
+def _make_pdf(path: Path, page_count: int = 2) -> None:
+    doc = fitz.open()
+    for _ in range(page_count):
+        doc.new_page()
+    doc.save(path)
+    doc.close()
+
+
+class TestExtractionIntegration:
+    def test_flat_extraction_writes_corrected_tree(self, tmp_path: Path, monkeypatch) -> None:
+        input_pdf = tmp_path / "book.pdf"
+        _make_pdf(input_pdf)
+
+        page_items = [
+            [{"text": "Chapter 1", "page": 1, "indent": 0}],
+            [{"text": "1.1 Section", "page": 2, "indent": 0}],  # wrong: should be indent 1
+        ]
+        call_index = [0]
+
+        def fake_vlm(image_data_urls, prompt, api_key, base_url, model):
+            items = page_items[call_index[0]]
+            call_index[0] += 1
+            return json.dumps(items)
+
+        corrected_tree = [
+            {
+                "title": "Chapter 1",
+                "page": 1,
+                "attribute": "relative",
+                "children": [
+                    {"title": "1.1 Section", "page": 2, "attribute": "relative", "children": []}
+                ],
+            }
+        ]
+
+        def fake_llm(prompt, api_key, base_url, model):
+            assert "children" in prompt
+            return json.dumps(corrected_tree)
+
+        monkeypatch.setattr(te, "request_toc_from_vlm", fake_vlm)
+        monkeypatch.setattr(te, "request_llm_json", fake_llm)
+
+        toc_data, cache_file, loaded_from_cache, raw_cache_file, stats = extract_toc_json(
+            input_pdf=input_pdf,
+            toc_start=0,
+            toc_end=1,
+            api_key="k",
+            base_url="http://x",
+            model="m",
+            dpi=220,
+            cache_dir=tmp_path / "cache",
+            overwrite_cache=False,
+        )
+
+        assert stats["level_correction"] == "applied"
+        assert toc_data == corrected_tree
+        assert json.loads(cache_file.read_text(encoding="utf-8")) == corrected_tree
+
+        # Second run hits the final cache and skips VLM + correction entirely.
+        toc_data2, _, loaded_from_cache2, _, stats2 = extract_toc_json(
+            input_pdf=input_pdf,
+            toc_start=0,
+            toc_end=1,
+            api_key="k",
+            base_url="http://x",
+            model="m",
+            dpi=220,
+            cache_dir=tmp_path / "cache",
+            overwrite_cache=False,
+        )
+        assert loaded_from_cache2
+        assert toc_data2 == corrected_tree
+
+    def test_correction_failure_falls_back_to_assembled_tree(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        input_pdf = tmp_path / "book.pdf"
+        _make_pdf(input_pdf)
+
+        page_items = [
+            [{"text": "Chapter 1", "page": 1, "indent": 0}],
+            [{"text": "Chapter 2", "page": 2, "indent": 0}],
+        ]
+        call_index = [0]
+
+        def fake_vlm(image_data_urls, prompt, api_key, base_url, model):
+            items = page_items[call_index[0]]
+            call_index[0] += 1
+            return json.dumps(items)
+
+        monkeypatch.setattr(te, "request_toc_from_vlm", fake_vlm)
+        monkeypatch.setattr(
+            te,
+            "request_llm_json",
+            lambda **kwargs: (_ for _ in ()).throw(RuntimeError("api down")),
+        )
+
+        toc_data, _, _, _, stats = extract_toc_json(
+            input_pdf=input_pdf,
+            toc_start=0,
+            toc_end=1,
+            api_key="k",
+            base_url="http://x",
+            model="m",
+            dpi=220,
+            cache_dir=tmp_path / "cache",
+            overwrite_cache=False,
+        )
+
+        assert stats["level_correction"] == "failed"
+        assert [node["title"] for node in toc_data] == ["Chapter 1", "Chapter 2"]
