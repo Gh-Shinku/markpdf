@@ -223,6 +223,7 @@ export function HomeRoute() {
           )
         }
         onOpenTasks={() => navigate("/tasks")}
+        onOpenDocs={() => navigate("/docs")}
         onOpenSettings={() => navigate("/settings", { state: { from: "/" } })}
       />
       {pendingDelete.length ? (

@@ -38,6 +38,7 @@ export function TasksRoute() {
       error={jobsQuery.error?.message}
       onOpenHome={() => navigate("/")}
       onOpenTasks={() => undefined}
+      onOpenDocs={() => navigate("/docs")}
       onOpenSettings={() => navigate("/settings", { state: { from: "/tasks" } })}
       onOpenProject={(projectId) => navigate(`/projects/${encodeURIComponent(projectId)}`)}
       onApplyJob={(jobId) => applyMutation.mutate(jobId)}

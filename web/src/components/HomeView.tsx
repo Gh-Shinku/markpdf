@@ -51,6 +51,7 @@ type HomeViewProps = {
   onDeleteProjects: (projectIds: string[]) => void;
   onSaveProjectGenerationSettings: (settings: ProjectGenerationSettings[]) => void;
   onOpenTasks: () => void;
+  onOpenDocs: () => void;
   onOpenSettings: () => void;
 };
 
@@ -66,6 +67,7 @@ export function HomeView({
   onDeleteProjects,
   onSaveProjectGenerationSettings,
   onOpenTasks,
+  onOpenDocs,
   onOpenSettings,
 }: HomeViewProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -192,6 +194,7 @@ export function HomeView({
         active="home"
         onHome={() => undefined}
         onTasks={onOpenTasks}
+        onDocs={onOpenDocs}
         onSettings={onOpenSettings}
       />
       <header className="app-header">

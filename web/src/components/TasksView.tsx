@@ -24,6 +24,7 @@ type TasksViewProps = {
   error?: string;
   onOpenHome: () => void;
   onOpenTasks: () => void;
+  onOpenDocs: () => void;
   onOpenSettings: () => void;
   onOpenProject: (projectId: string) => void;
   onApplyJob: (jobId: string) => void;
@@ -61,6 +62,7 @@ export function TasksView({
   error,
   onOpenHome,
   onOpenTasks,
+  onOpenDocs,
   onOpenSettings,
   onOpenProject,
   onApplyJob,
@@ -85,6 +87,7 @@ export function TasksView({
         active="tasks"
         onHome={onOpenHome}
         onTasks={onOpenTasks}
+        onDocs={onOpenDocs}
         onSettings={onOpenSettings}
       />
       <header className="app-header">

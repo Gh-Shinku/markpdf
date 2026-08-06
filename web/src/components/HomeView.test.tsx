@@ -49,6 +49,7 @@ describe("HomeView", () => {
         onDeleteProjects={vi.fn()}
         onSaveProjectGenerationSettings={vi.fn()}
         onOpenTasks={vi.fn()}
+        onOpenDocs={vi.fn()}
         onOpenSettings={vi.fn()}
       />,
     );

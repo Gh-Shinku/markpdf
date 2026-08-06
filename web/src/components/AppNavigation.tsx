@@ -1,14 +1,15 @@
-import { BookMarked, FolderOpen, ListChecks, Settings } from "lucide-react";
+import { BookMarked, BookOpen, FolderOpen, ListChecks, Settings } from "lucide-react";
 import styles from "./AppNavigation.module.css";
 
 type AppNavigationProps = {
-  active: "home" | "settings" | "tasks" | "workspace";
+  active: "home" | "settings" | "tasks" | "workspace" | "docs";
   onHome: () => void;
   onTasks: () => void;
+  onDocs: () => void;
   onSettings: () => void;
 };
 
-export function AppNavigation({ active, onHome, onTasks, onSettings }: AppNavigationProps) {
+export function AppNavigation({ active, onHome, onTasks, onDocs, onSettings }: AppNavigationProps) {
   return (
     <aside className={styles.navigation} aria-label="Application navigation">
       <button className={styles.mark} type="button" aria-label="All projects" onClick={onHome}>
@@ -34,6 +35,16 @@ export function AppNavigation({ active, onHome, onTasks, onSettings }: AppNaviga
         >
           <ListChecks size={18} aria-hidden="true" />
           <span>Tasks</span>
+        </button>
+        <button
+          className={`${styles.action}${active === "docs" ? ` ${styles.active}` : ""}`}
+          type="button"
+          aria-current={active === "docs" ? "page" : undefined}
+          onClick={onDocs}
+          title="Docs"
+        >
+          <BookOpen size={18} aria-hidden="true" />
+          <span>Docs</span>
         </button>
       </nav>
       <button

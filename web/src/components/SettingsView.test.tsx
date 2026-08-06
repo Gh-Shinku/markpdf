@@ -20,6 +20,7 @@ describe("SettingsView", () => {
         onBack={vi.fn()}
         onOpenHome={vi.fn()}
         onOpenTasks={vi.fn()}
+        onOpenDocs={vi.fn()}
         onSave={vi.fn()}
         onTest={vi.fn()}
       />,
@@ -46,6 +47,7 @@ describe("SettingsView", () => {
         onBack={vi.fn()}
         onOpenHome={vi.fn()}
         onOpenTasks={vi.fn()}
+        onOpenDocs={vi.fn()}
         onSave={vi.fn()}
         onTest={vi.fn()}
       />,

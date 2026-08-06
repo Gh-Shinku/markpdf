@@ -28,6 +28,7 @@ type SettingsViewProps = {
   onBack: () => void;
   onOpenHome: () => void;
   onOpenTasks: () => void;
+  onOpenDocs: () => void;
   onSave: () => void;
   onTest: (providerId: string) => void;
 };
@@ -47,6 +48,7 @@ export function SettingsView({
   onBack,
   onOpenHome,
   onOpenTasks,
+  onOpenDocs,
   onSave,
   onTest,
 }: SettingsViewProps) {
@@ -96,6 +98,7 @@ export function SettingsView({
         active="settings"
         onHome={onOpenHome}
         onTasks={onOpenTasks}
+        onDocs={onOpenDocs}
         onSettings={() => undefined}
       />
       <header className="app-header">
