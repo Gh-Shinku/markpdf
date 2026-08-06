@@ -1,13 +1,14 @@
 # PDF Bookmark Workspace
 
-用于本地管理 PDF 目录 JSON、生成书签并预览结果的桌面式 WebUI。
+A desktop-style web UI for managing PDF outline (bookmark) JSON locally, generating outlines from printed table-of-contents pages with a vision language model (VLM), and writing the results back into the PDF.
 
-- 使用指南(导入、编辑、AI 生成、设置):[docs/USAGE.md](docs/USAGE.md)
-- 应用内置文档页面:启动后访问 `http://127.0.0.1:5173/docs`
+- **User guide**: [docs/USAGE.md](docs/USAGE.md)
+- **In-app documentation**: visit `http://127.0.0.1:5173/docs` after starting the app
+- **中文文档**: [README_zh.md](README_zh.md)
 
 ## Run
 
-启动后端:
+Start the backend:
 
 ```bash
 cd server
@@ -16,7 +17,7 @@ uv pip install -e .
 uv run uvicorn bookmark_server.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-启动前端:
+Start the frontend:
 
 ```bash
 cd web
@@ -24,23 +25,24 @@ npm install
 npm run dev
 ```
 
-打开 `http://127.0.0.1:5173/`。Vite 会将 `/api/*` 转发到本地后端。
+Open `http://127.0.0.1:5173/`. Vite proxies `/api/*` to the local backend.
 
-项目数据默认存储在 `server/workspace_data/`。可在启动后端时通过
-`BOOKMARK_WORKSPACE_DATA` 指定其他本地目录。
+Project data is stored in `server/workspace_data/` by default. Set the
+`BOOKMARK_WORKSPACE_DATA` environment variable before starting the backend to
+use a different directory.
 
 ## Dev
 
-- 服务端测试:`cd server && uv run pytest`(或 `uv run pytest -q`)。
-- 前端检查:`cd web && npm run check`(format / lint / css lint / build / test)。
-- 目录结构:
+- Server tests: `cd server && uv run pytest` (or `uv run pytest -q`).
+- Frontend checks: `cd web && npm run check` (format / lint / css lint / build / test).
+- Layout:
 
 ```text
 server/bookmark_server/
-  core/        PDF 书签写入与 TOC 校验、注入逻辑
-  routes/      FastAPI 路由(projects、jobs、settings)
-  services/    生成任务、VLM 提取管线(缓存、建树、层级校正)
-server/tests/  服务端测试
-web/src/       React 前端(AppNavigation、Home/Tasks/Settings/Workspace/Docs 页面)
-docs/          USAGE.md(用户指南,应用内渲染)
+  core/        PDF bookmark writing, TOC validation and injection
+  routes/      FastAPI routes (projects, jobs, settings)
+  services/    generation jobs, VLM extraction pipeline (cache, tree assembly, level correction)
+server/tests/  server tests
+web/src/       React frontend (Home / Tasks / Settings / Workspace / Docs views)
+docs/          USAGE.md (user guide, rendered in-app)
 ```
