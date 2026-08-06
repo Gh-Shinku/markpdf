@@ -1,11 +1,12 @@
 .content {
   grid-column: 2;
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 24px;
   min-width: 0;
-  overflow: auto;
-  padding: 24px clamp(20px, 4vw, 56px) 52px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 24px clamp(20px, 4vw, 56px);
 }
 
 .headerStats {
@@ -29,6 +30,9 @@
 
 .taskPanel {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
   width: min(1120px, 100%);
   border: 1px solid var(--line);
@@ -93,6 +97,10 @@
 
 .list {
   display: grid;
+  align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 28px;
 }
 
 .task {
@@ -246,6 +254,7 @@
 
 .empty {
   display: grid;
+  align-content: center;
   justify-items: center;
   gap: 8px;
   padding: 56px 16px;
