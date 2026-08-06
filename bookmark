@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+#
+# PDF Bookmark Workspace — single-command launcher.
+#
+# Builds the frontend when needed, starts the backend (which serves both the
+# API and the built frontend on one port) and opens the app in the browser.
+# Runs in the foreground so logs and the app URL stay visible in the shell.
+#
+# Usage:
+#   ./bookmark                 start with defaults (port 8000)
+#   ./bookmark --port 8123     use another port
+#   ./bookmark --no-open       do not open the browser automatically
+#   ./bookmark --rebuild       rebuild the frontend even if dist exists
+#   ./bookmark --help          show this help
+#
+# Environment: BOOKMARK_PORT, BOOKMARK_WEB_DIST (frontend build directory).
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PORT="${BOOKMARK_PORT:-8000}"
+OPEN_BROWSER=1
+REBUILD=0
+WEB_DIST="${BOOKMARK_WEB_DIST:-$ROOT/web/dist}"
+
+usage() {
+  sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --port)
+      PORT="$2"
+      shift 2
+      ;;
+    --no-open)
+      OPEN_BROWSER=0
+      shift
+      ;;
+    --rebuild)
+      REBUILD=1
+      shift
+      ;;
+    --help | -h)
+      usage
+      ;;
+    *)
+      echo "Unknown option: $1 (try --help)" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv is required (https://docs.astral.sh/uv/). Install it first." >&2
+  exit 1
+fi
+if ! command -v npm >/dev/null 2>&1; then
+  echo "npm is required to build the frontend. Install Node.js first." >&2
+  exit 1
+fi
+
+# Refuse to start on a port that is already in use.
+if python3 - "$PORT" <<'EOF'
+import socket
+import sys
+
+port = int(sys.argv[1])
+probe = socket.socket()
+try:
+    probe.bind(("127.0.0.1", port))
+except OSError:
+    sys.exit(1)
+finally:
+    probe.close()
+EOF
+then
+  :
+else
+  echo "Port $PORT is already in use. Pick another one with --port." >&2
+  exit 1
+fi
+
+# Build the frontend unless it is already built.
+if [[ $REBUILD -eq 1 || ! -f "$WEB_DIST/index.html" ]]; then
+  echo "== Building frontend (web/dist) =="
+  (cd "$ROOT/web" && npm install && npm run build)
+fi
+
+URL="http://127.0.0.1:$PORT"
+
+echo
+echo "  PDF Bookmark Workspace"
+echo "  URL: $URL"
+echo "  Press Ctrl+C to stop."
+echo
+
+# Open the browser once the server is reachable, without blocking startup.
+if [[ $OPEN_BROWSER -eq 1 ]]; then
+  (
+    for _ in $(seq 1 60); do
+      if curl --noproxy '*' -sf -o /dev/null "$URL/api/health"; then
+        break
+      fi
+      sleep 0.5
+    done
+    if command -v xdg-open >/dev/null 2>&1; then
+      xdg-open "$URL" >/dev/null 2>&1 || true
+    elif command -v open >/dev/null 2>&1; then
+      open "$URL" >/dev/null 2>&1 || true
+    fi
+  ) &
+fi
+
+cd "$ROOT/server"
+exec uv run uvicorn bookmark_server.main:app --host 127.0.0.1 --port "$PORT"
