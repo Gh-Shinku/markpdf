@@ -48,25 +48,70 @@ export function DocsView({ onOpenHome, onOpenTasks, onOpenSettings }: DocsViewPr
     return items;
   }, []);
 
+  // Keep component overrides and plugins stable so re-renders (e.g. from
+  // scroll-spy state updates) do not rebuild the whole markdown tree.
+  const markdownComponents = useMemo(
+    () => ({
+      h1: ({ children }: { children?: React.ReactNode }) => (
+        <h1 className="doc-title">{children}</h1>
+      ),
+      h2: ({ children }: { children?: React.ReactNode }) => (
+        <h2 id={slugify(flattenText(children))} className="doc-h2">
+          {children}
+        </h2>
+      ),
+      h3: ({ children }: { children?: React.ReactNode }) => (
+        <h3 id={slugify(flattenText(children))} className="doc-h3">
+          {children}
+        </h3>
+      ),
+      a: ({ children, href }: { children?: React.ReactNode; href?: string }) => (
+        <a href={href} target="_blank" rel="noreferrer">
+          {children}
+        </a>
+      ),
+      pre: ({ children }: { children?: React.ReactNode }) => (
+        <pre className="doc-pre">{children}</pre>
+      ),
+      code: ({ className, children }: { className?: string; children?: React.ReactNode }) =>
+        typeof className === "string" && className.includes("language-") ? (
+          <code className={className}>{children}</code>
+        ) : (
+          <code className="doc-code-inline">{children}</code>
+        ),
+    }),
+    [],
+  );
+  const remarkPlugins = useMemo(() => [remarkGfm], []);
+
   useEffect(() => {
     const article = articleRef.current;
     if (!article) return;
-    const targets = headings
-      .map(({ id }) => article.querySelector<HTMLElement>(`#${id}`))
-      .filter((el): el is HTMLElement => el !== null);
-    if (!targets.length) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        const top = visible[0];
-        if (top) setActiveId(top.target.id);
-      },
-      { root: article, rootMargin: "-10% 0px -75% 0px" },
-    );
-    targets.forEach((target) => observer.observe(target));
-    return () => observer.disconnect();
+
+    // Re-resolve heading nodes on every update: re-renders triggered by
+    // setActiveId can rebuild the react-markdown tree, detaching nodes that
+    // an effect closure captured. Scroll events are synchronous, so reading
+    // the layout here is always fresh.
+    const updateActive = () => {
+      const articleTop = article.getBoundingClientRect().top;
+      let currentId = headings[0]?.id ?? null;
+      for (const { id } of headings) {
+        const target = article.querySelector<HTMLElement>(`#${id}`);
+        if (!target) continue;
+        if (target.getBoundingClientRect().top - articleTop > 48) break;
+        currentId = id;
+      }
+      // A long final section may never scroll its top into the trigger zone;
+      // pin the last heading once the reader reaches the bottom.
+      if (article.scrollTop + article.clientHeight >= article.scrollHeight - 2) {
+        currentId = headings[headings.length - 1]?.id ?? currentId;
+      }
+      setActiveId(currentId);
+    };
+
+    updateActive();
+    article.addEventListener("scroll", updateActive, { passive: true });
+    return () => article.removeEventListener("scroll", updateActive);
   }, [headings]);
 
   function jumpTo(id: string) {
@@ -108,34 +153,7 @@ export function DocsView({ onOpenHome, onOpenTasks, onOpenSettings }: DocsViewPr
           </nav>
         </aside>
         <article className="docs-article" ref={articleRef}>
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              h1: ({ children }) => <h1 className="doc-title">{children}</h1>,
-              h2: ({ children }) => (
-                <h2 id={slugify(flattenText(children))} className="doc-h2">
-                  {children}
-                </h2>
-              ),
-              h3: ({ children }) => (
-                <h3 id={slugify(flattenText(children))} className="doc-h3">
-                  {children}
-                </h3>
-              ),
-              a: ({ children, href }) => (
-                <a href={href} target="_blank" rel="noreferrer">
-                  {children}
-                </a>
-              ),
-              pre: ({ children }) => <pre className="doc-pre">{children}</pre>,
-              code: ({ className, children }) =>
-                typeof className === "string" && className.includes("language-") ? (
-                  <code className={className}>{children}</code>
-                ) : (
-                  <code className="doc-code-inline">{children}</code>
-                ),
-            }}
-          >
+          <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
             {usageMd}
           </ReactMarkdown>
         </article>
