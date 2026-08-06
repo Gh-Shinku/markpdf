@@ -96,6 +96,7 @@ export function PdfViewer({
   const stageRef = useRef<HTMLDivElement | null>(null);
   const sidebarBodyRef = useRef<HTMLDivElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
+  const currentDocumentRef = useRef<PDFDocumentProxy | null>(null);
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [pageSizes, setPageSizes] = useState<PageSize[]>([]);
   const [outline, setOutline] = useState<PdfOutlineItem[]>([]);
@@ -111,7 +112,7 @@ export function PdfViewer({
   const [loadState, setLoadState] = useState<LoadState>({ kind: "idle" });
 
   const pageCount = pdfDocument?.numPages ?? 0;
-  const isReady = Boolean(pdfDocument);
+  const isReady = Boolean(pdfDocument) && loadState.kind === "ready";
 
   const pageVirtualizer = useVirtualizer({
     count: pageCount,
@@ -186,6 +187,10 @@ export function PdfViewer({
 
   useEffect(() => {
     if (!source) {
+      if (currentDocumentRef.current) {
+        pageCleanupDocument(currentDocumentRef.current);
+        currentDocumentRef.current = null;
+      }
       setPdfDocument(null);
       setPageSizes([]);
       setOutline([]);
@@ -194,14 +199,16 @@ export function PdfViewer({
     }
 
     let cancelled = false;
-    let loadedDocument: PDFDocumentProxy | null = null;
+    let taskSettled = false;
     setLoadState({ kind: "loading", message: "Loading PDF" });
-    setPdfDocument(null);
-    setPageSizes([]);
-    setOutline([]);
-    setPageNumber(1);
-    setPageInput("1");
-    setFitMode(true);
+    if (!currentDocumentRef.current) {
+      setPdfDocument(null);
+      setPageSizes([]);
+      setOutline([]);
+      setPageNumber(1);
+      setPageInput("1");
+      setFitMode(true);
+    }
 
     const loadingTask = pdfjsLib.getDocument({
       url: source,
@@ -213,13 +220,12 @@ export function PdfViewer({
 
     loadingTask.promise
       .then(async (pdf) => {
-        loadedDocument = pdf;
+        taskSettled = true;
         if (cancelled) {
           pageCleanupDocument(pdf);
           return;
         }
 
-        setPdfDocument(pdf);
         setLoadState({ kind: "loading", message: "Reading page metadata" });
 
         const outlinePromise = pdf
@@ -237,13 +243,24 @@ export function PdfViewer({
         const nextSizes = await loadPageSizes(pdf, () => cancelled);
 
         if (cancelled) {
+          pageCleanupDocument(pdf);
           return;
         }
 
+        const previousDocument = currentDocumentRef.current;
+        currentDocumentRef.current = pdf;
+        setPdfDocument(pdf);
         setPageSizes(nextSizes);
+        setPageNumber(1);
+        setPageInput("1");
+        setFitMode(true);
         setLoadState({ kind: "ready" });
+        if (previousDocument && previousDocument !== pdf) {
+          pageCleanupDocument(previousDocument);
+        }
       })
       .catch((error: unknown) => {
+        taskSettled = true;
         if (cancelled) {
           return;
         }
@@ -255,12 +272,18 @@ export function PdfViewer({
 
     return () => {
       cancelled = true;
-      if (loadedDocument) {
-        pageCleanupDocument(loadedDocument);
-      }
-      void loadingTask.destroy();
+      if (!taskSettled) void loadingTask.destroy();
     };
   }, [source]);
+
+  useEffect(() => {
+    return () => {
+      if (currentDocumentRef.current) {
+        pageCleanupDocument(currentDocumentRef.current);
+        currentDocumentRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setPageInput(String(pageNumber));
@@ -599,7 +622,12 @@ export function PdfViewer({
             <div className="pdf-viewer-message error">{loadState.message}</div>
           ) : null}
           {loadState.kind === "loading" ? (
-            <div className="pdf-viewer-message">{loadState.message}</div>
+            <div className="pdf-loading-overlay" role="status" aria-live="polite">
+              <div className="pdf-loading-card">
+                <span className="pdf-loading-spinner" aria-hidden="true" />
+                <span>{loadState.message}</span>
+              </div>
+            </div>
           ) : null}
           <div
             className="pdf-page-list"

@@ -383,6 +383,65 @@
   border-color: #e0b5bd;
 }
 
+.pdf-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent, rgb(255 255 255 / 20%), transparent), rgb(223 227 231 / 62%);
+  background-size:
+    180px 100%,
+    auto;
+  animation: pdf-loading-sheen 1.2s ease-in-out infinite;
+  backdrop-filter: blur(1px);
+}
+
+.pdf-loading-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  border: 1px solid rgb(184 192 200 / 72%);
+  border-radius: 999px;
+  color: #38414a;
+  background: rgb(255 255 255 / 86%);
+  box-shadow: 0 8px 24px rgb(31 35 40 / 14%);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pdf-loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgb(47 111 159 / 22%);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: pdf-loading-spin 780ms linear infinite;
+}
+
+@keyframes pdf-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pdf-loading-sheen {
+  from {
+    background-position:
+      -180px 0,
+      0 0;
+  }
+
+  to {
+    background-position:
+      calc(100% + 180px) 0,
+      0 0;
+  }
+}
+
 @media (max-width: 760px) {
   .pdf-viewer {
     --pdf-sidebar-width: 124px;

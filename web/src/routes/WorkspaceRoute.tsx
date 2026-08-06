@@ -127,21 +127,26 @@ export function WorkspaceRoute() {
 
   useEffect(() => {
     setSelectedTocFileId("main");
+    setTocText("");
+    savedTocRef.current = "";
     setPdfVersion(0);
   }, [projectId]);
   useEffect(() => {
-    const project = projectQuery.data;
     const toc = tocQuery.data;
-    if (!project || toc === undefined) return;
+    if (toc === undefined) return;
     setTocText(toc);
     savedTocRef.current = toc;
+  }, [projectId, selectedTocFileId, tocQuery.data]);
+  useEffect(() => {
+    const project = projectQuery.data;
+    if (!project) return;
     setPageOffset(String(project.page_offset ?? 0));
     savedOffsetRef.current = String(project.page_offset ?? 0);
     setTocStart(String(project.toc_start ?? 1));
     savedTocStartRef.current = String(project.toc_start ?? 1);
     setTocEnd(String(project.toc_end ?? project.page_count));
     savedTocEndRef.current = String(project.toc_end ?? project.page_count);
-  }, [projectId, projectQuery.data, tocQuery.data]);
+  }, [projectId, projectQuery.data]);
   useEffect(() => {
     if (!verifiedProviders.some((provider) => provider.id === providerId))
       setProviderId(verifiedProviders[0]?.id ?? "");
@@ -289,7 +294,12 @@ export function WorkspaceRoute() {
     () => ({ "--editor-split": `${splitPercent}%` }) as React.CSSProperties,
     [splitPercent],
   );
-  if (projectQuery.isLoading || tocQuery.isLoading || tocFilesQuery.isLoading)
+  const isInitialWorkspaceLoading =
+    projectQuery.isLoading ||
+    tocFilesQuery.isLoading ||
+    (!tocText && selectedTocFileId === "main" && tocQuery.isLoading);
+  const isTocFileLoading = tocQuery.isLoading || (!tocQuery.data && tocQuery.isFetching);
+  if (isInitialWorkspaceLoading)
     return (
       <RouteMessage
         title="Loading project"
@@ -312,6 +322,8 @@ export function WorkspaceRoute() {
       <WorkspaceView
         project={projectQuery.data}
         tocText={tocText}
+        editorModelKey={`${projectId}:${selectedTocFileId}`}
+        isEditorLoading={isTocFileLoading}
         tocFiles={tocFilesQuery.data ?? []}
         selectedTocFileId={selectedTocFileId}
         pageOffset={pageOffset}

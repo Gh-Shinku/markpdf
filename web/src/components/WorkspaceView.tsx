@@ -32,6 +32,8 @@ const MIN_EDITOR_WIDTH = 260;
 type WorkspaceViewProps = {
   project: Project | null;
   tocText: string;
+  editorModelKey: string;
+  isEditorLoading: boolean;
   tocFiles: TocFile[];
   selectedTocFileId: string;
   pageOffset: string;
@@ -65,6 +67,8 @@ type WorkspaceViewProps = {
 export function WorkspaceView({
   project,
   tocText,
+  editorModelKey,
+  isEditorLoading,
   tocFiles,
   selectedTocFileId,
   pageOffset,
@@ -248,7 +252,21 @@ export function WorkspaceView({
                 onPointerCancel={stopFileExplorerResize}
               />
             ) : null}
-            <JsonEditor ref={editorRef} value={tocText} theme={theme} onChange={onEditorChange} />
+            <div className="json-editor-region">
+              <JsonEditor
+                ref={editorRef}
+                value={tocText}
+                modelKey={editorModelKey}
+                theme={theme}
+                onChange={onEditorChange}
+              />
+              {isEditorLoading ? (
+                <div className="json-editor-loading" role="status" aria-live="polite">
+                  <Loader2 className="spin" size={18} aria-hidden="true" />
+                  <span>Loading TOC file</span>
+                </div>
+              ) : null}
+            </div>
           </div>
         </section>
 

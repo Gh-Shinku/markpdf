@@ -1,12 +1,18 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
 import "monaco-editor/esm/vs/base/browser/ui/codicons/codiconStyles";
+import "monaco-editor/esm/vs/editor/contrib/cursorUndo/browser/cursorUndo";
 import "monaco-editor/esm/vs/editor/contrib/find/browser/findController";
 import "monaco-editor/esm/vs/editor/contrib/folding/browser/folding";
+import "monaco-editor/esm/vs/editor/contrib/multicursor/browser/multicursor";
+import "monaco-editor/esm/vs/editor/contrib/smartSelect/browser/smartSelect";
+import "monaco-editor/esm/vs/editor/contrib/wordOperations/browser/wordOperations";
+import "monaco-editor/esm/vs/editor/contrib/wordPartOperations/browser/wordPartOperations";
 import "monaco-editor/esm/vs/language/json/monaco.contribution";
 
 type JsonEditorProps = {
   value: string;
+  modelKey: string;
   theme: "light" | "dark";
   onChange: (value: string) => void;
 };
@@ -16,7 +22,7 @@ export type JsonEditorHandle = {
 };
 
 const TOC_SCHEMA_URI = "inmemory://bookmark/toc.schema.json";
-const MODEL_URI = "inmemory://bookmark/toc.json";
+const MODEL_URI_PREFIX = "inmemory://bookmark/toc";
 
 type JsonLanguageDefaults = {
   setDiagnosticsOptions: (options: {
@@ -36,7 +42,7 @@ type JsonLanguageDefaults = {
   schemas: [
     {
       uri: TOC_SCHEMA_URI,
-      fileMatch: [MODEL_URI],
+      fileMatch: [`${MODEL_URI_PREFIX}/*.json`],
       schema: {
         $schema: "http://json-schema.org/draft-07/schema#",
         title: "TOC JSON",
@@ -80,25 +86,32 @@ type JsonLanguageDefaults = {
   ],
 });
 
-function createModel(value: string): monaco.editor.ITextModel {
-  const uri = monaco.Uri.parse(MODEL_URI);
+function modelUri(modelKey: string): monaco.Uri {
+  return monaco.Uri.parse(`${MODEL_URI_PREFIX}/${encodeURIComponent(modelKey)}.json`);
+}
+
+function getOrCreateModel(modelKey: string, value: string): monaco.editor.ITextModel {
+  const uri = modelUri(modelKey);
   const existingModel = monaco.editor.getModel(uri);
   if (existingModel) {
-    existingModel.setValue(value);
     return existingModel;
   }
   return monaco.editor.createModel(value, "json", uri);
 }
 
 export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function JsonEditor(
-  { value, theme, onChange },
+  { value, modelKey, theme, onChange },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
+  const modelsRef = useRef(new Map<string, monaco.editor.ITextModel>());
+  const viewStatesRef = useRef(new Map<string, monaco.editor.ICodeEditorViewState | null>());
   const initialValueRef = useRef(value);
+  const initialModelKeyRef = useRef(modelKey);
   const initialThemeRef = useRef(theme);
+  const currentModelKeyRef = useRef(modelKey);
   const onChangeRef = useRef(onChange);
   const suppressChangeRef = useRef(false);
 
@@ -118,7 +131,10 @@ export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function
       return;
     }
 
-    const model = createModel(initialValueRef.current);
+    const models = modelsRef.current;
+    const viewStates = viewStatesRef.current;
+    const model = getOrCreateModel(initialModelKeyRef.current, initialValueRef.current);
+    models.set(initialModelKeyRef.current, model);
     modelRef.current = model;
 
     const editor = monaco.editor.create(hostRef.current, {
@@ -168,8 +184,17 @@ export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function
     });
 
     return () => {
+      const currentModelKey = currentModelKeyRef.current;
+      if (editor.getModel()) {
+        viewStates.set(currentModelKey, editor.saveViewState());
+      }
       subscription.dispose();
       editor.dispose();
+      models.forEach((createdModel) => {
+        if (!createdModel.isDisposed()) createdModel.dispose();
+      });
+      models.clear();
+      viewStates.clear();
       editorRef.current = null;
       modelRef.current = null;
     };
@@ -178,6 +203,39 @@ export const JsonEditor = forwardRef<JsonEditorHandle, JsonEditorProps>(function
   useEffect(() => {
     monaco.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
   }, [theme]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const previousModelKey = currentModelKeyRef.current;
+    if (previousModelKey !== modelKey && editor.getModel()) {
+      viewStatesRef.current.set(previousModelKey, editor.saveViewState());
+    }
+
+    const nextModel = getOrCreateModel(modelKey, value);
+    modelsRef.current.set(modelKey, nextModel);
+    modelRef.current = nextModel;
+
+    if (nextModel.getValue() !== value) {
+      suppressChangeRef.current = true;
+      nextModel.setValue(value);
+      suppressChangeRef.current = false;
+    }
+
+    if (editor.getModel() !== nextModel) {
+      editor.setModel(nextModel);
+      const viewState = viewStatesRef.current.get(modelKey);
+      if (viewState) {
+        editor.restoreViewState(viewState);
+      } else {
+        editor.setScrollTop(0);
+        editor.setPosition({ lineNumber: 1, column: 1 });
+      }
+    }
+
+    currentModelKeyRef.current = modelKey;
+  }, [modelKey, value]);
 
   useEffect(() => {
     const editor = editorRef.current;
