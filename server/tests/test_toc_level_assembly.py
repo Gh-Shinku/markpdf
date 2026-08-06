@@ -126,6 +126,20 @@ class TestIndentLevelAssembly:
         )
         assert healed == [{"text": "Chapter 1: A LongTitle", "page": 1, "indent": 1}]
 
+    def test_roman_page_entries_excluded_from_final_tree(self) -> None:
+        extractor = FlatExtractor(toc_start=0, toc_end=0)
+        flat = extractor._validate_flat_list(
+            [
+                {"text": "Preface", "page": "vii", "indent": 0},
+                {"text": "Introduction", "page": "x", "indent": 0},
+                {"text": "Chapter 1", "page": "1", "indent": 0},
+                {"text": "1.1 Section", "page": "2", "indent": 1},
+            ]
+        )
+        tree = extractor.assembler.assemble(flat)
+        assert [node["title"] for node in tree] == ["Chapter 1"]
+        assert tree[0]["children"][0]["title"] == "1.1 Section"
+
 
 class TestFlatListValidation:
     def test_indent_accepted(self) -> None:
@@ -145,6 +159,44 @@ class TestFlatListValidation:
         for bad in (-1, 1.5, "1", True):
             with pytest.raises(ValueError):
                 extractor._validate_flat_list([{"text": "A", "page": 1, "indent": bad}])
+
+    def test_roman_numeral_pages_dropped(self) -> None:
+        extractor = FlatExtractor(toc_start=0, toc_end=0)
+        result = extractor._validate_flat_list(
+            [
+                {"text": "Preface", "page": "vii", "indent": 0},
+                {"text": "Introduction", "page": "xii", "indent": 0},
+                {"text": "Foreword", "page": "III", "indent": 0},
+            ]
+        )
+        assert result == []
+
+    def test_digit_string_pages_converted_to_int(self) -> None:
+        extractor = FlatExtractor(toc_start=0, toc_end=0)
+        result = extractor._validate_flat_list(
+            [
+                {"text": "Chapter 1", "page": "12", "indent": 0},
+                {"text": "Chapter 2", "page": "25.", "indent": 0},
+                {"text": "Chapter 3", "page": 30, "indent": 0},
+                {"text": "Chapter 4", "page": None, "indent": 0},
+            ]
+        )
+        assert result == [
+            {"text": "Chapter 1", "page": 12, "indent": 0},
+            {"text": "Chapter 2", "page": 25, "indent": 0},
+            {"text": "Chapter 3", "page": 30, "indent": 0},
+            {"text": "Chapter 4", "page": None, "indent": 0},
+        ]
+
+    def test_unparseable_page_strings_dropped(self) -> None:
+        extractor = FlatExtractor(toc_start=0, toc_end=0)
+        result = extractor._validate_flat_list(
+            [
+                {"text": "A", "page": "12a", "indent": 0},
+                {"text": "B", "page": "", "indent": 0},
+            ]
+        )
+        assert result == []
 
 
 class TestLevelCorrection:

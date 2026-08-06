@@ -26,10 +26,17 @@ DEFAULT_FLAT_PROMPT = (
     "3. **Page Range**: Only process the content visible on THIS page. Do not guess what's on the next page.\n"
     "4. **Filtering**: Ignore headers, footers, and decorative elements.\n"
     "5. **Verbatim**: Keep the original numbering (e.g., '1.2.3', 'Appendix A') within the 'text' field.\n"
-    "6. **Indent Level**: Set 'indent' to the visual indentation depth of each entry relative to the leftmost ToC column on this page: 0 for top-level entries, and 1 for each deeper indentation level. Judge from indentation and font size, and keep the scale consistent within the page.\n\n"
+    "6. **Indent Level**: Set 'indent' to the visual indentation depth of each entry relative to the leftmost ToC column on this page: 0 for top-level entries, and 1 for each deeper indentation level. Judge from indentation and font size, and keep the scale consistent within the page.\n"
+    "7. **Page Numbers**: Copy the printed page number exactly as shown, as a string (e.g. '12' or 'vii'), or set to null when not visible. Roman-numeral pages are ignored by the reader, so skip such entries entirely.\n\n"
     "### Output Format:\n"
     "Return ONLY a JSON array. No markdown, no conversational text.\n"
-    'Schema: [{"text": "Full Title String", "page": integer_or_null, "indent": integer}, ...]'
+    'Schema: [{"text": "Full Title String", "page": string_or_null, "indent": integer}, ...]'
+)
+
+
+_ROMAN_RE = re.compile(
+    r"^(?=[MDCLXVI])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$",
+    re.IGNORECASE,
 )
 
 
@@ -375,14 +382,41 @@ class FlatExtractor(BaseExtractor):
 
             if not isinstance(text, str) or not text.strip():
                 raise ValueError(f"Invalid text in flat node: {node!r}")
-            if page is not None and not isinstance(page, int):
+            if page is not None and not isinstance(page, (int, str)):
+                raise ValueError(f"Invalid page in flat node: {node!r}")
+            if isinstance(page, bool):
                 raise ValueError(f"Invalid page in flat node: {node!r}")
             if indent is not None and (not isinstance(indent, int) or isinstance(indent, bool) or indent < 0):
                 raise ValueError(f"Invalid indent in flat node: {node!r}")
 
-            validated.append({"text": text.strip(), "page": page, "indent": indent})
+            parsed_page, keep = self._parse_flat_page(page)
+            if not keep:
+                continue
+            validated.append({"text": text.strip(), "page": parsed_page, "indent": indent})
 
         return validated
+
+    @staticmethod
+    def _parse_flat_page(page: int | str | None) -> tuple[int | None, bool]:
+        """Resolve a raw page value into an integer page number.
+
+        Roman-numeral pages (e.g. 'vii' from Prefaces that precede the first
+        relative page) and unparseable strings are dropped by returning
+        keep=False, so they never reach the assembled TOC.
+        """
+        if page is None:
+            return None, True
+        if isinstance(page, int):
+            return page, True
+
+        cleaned = str(page).strip().rstrip(".").rstrip(",")
+        if not cleaned:
+            return None, False
+        if cleaned.isdigit():
+            return int(cleaned), True
+        if _ROMAN_RE.match(cleaned):
+            return None, False
+        return None, False
 
 
 def request_llm_json(
