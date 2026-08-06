@@ -61,13 +61,16 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-# Refuse to start on a port that is already in use.
+# Refuse to start on a port that is already in use. SO_REUSEADDR mirrors
+# uvicorn's own socket setup so lingering TIME_WAIT connections (which are
+# not visible in `ss -tunlp`) do not trigger a false positive.
 if python3 - "$PORT" <<'EOF'
 import socket
 import sys
 
 port = int(sys.argv[1])
 probe = socket.socket()
+probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 try:
     probe.bind(("127.0.0.1", port))
 except OSError:
