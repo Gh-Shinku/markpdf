@@ -392,7 +392,7 @@
 .generation-settings-header,
 .generation-settings-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(78px, 96px)) minmax(170px, 220px);
+  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(78px, 96px)) minmax(170px, 220px) 44px;
   align-items: center;
   gap: 8px;
 }
@@ -450,6 +450,20 @@
 
 .generation-provider-field {
   display: block;
+}
+
+.generation-inject-field {
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  cursor: pointer;
+}
+
+.generation-inject-field input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .generation-provider-field span {

@@ -37,6 +37,7 @@ type WorkspaceViewProps = {
   tocFiles: TocFile[];
   selectedTocFileId: string;
   pageOffset: string;
+  injectTocPage: boolean;
   theme: "light" | "dark";
   canUseProjectActions: boolean;
   isPreviewing: boolean;
@@ -53,6 +54,7 @@ type WorkspaceViewProps = {
   onOpenTasks: () => void;
   onOpenSettings: () => void;
   onPageOffsetChange: (value: string) => void;
+  onInjectTocPageChange: (value: boolean) => void;
   onOpenGenerateDialog: () => void;
   onApplyPreview: () => void;
   onEditorChange: (value: string) => void;
@@ -72,6 +74,7 @@ export function WorkspaceView({
   tocFiles,
   selectedTocFileId,
   pageOffset,
+  injectTocPage,
   theme,
   canUseProjectActions,
   isPreviewing,
@@ -88,6 +91,7 @@ export function WorkspaceView({
   onOpenTasks,
   onOpenSettings,
   onPageOffsetChange,
+  onInjectTocPageChange,
   onOpenGenerateDialog,
   onApplyPreview,
   onEditorChange,
@@ -307,7 +311,9 @@ export function WorkspaceView({
                       </button>
                       <PreviewSettingsMenu
                         pageOffset={pageOffset}
+                        injectTocPage={injectTocPage}
                         onPageOffsetChange={onPageOffsetChange}
+                        onInjectTocPageChange={onInjectTocPageChange}
                       />
                     </div>
                     {project ? (

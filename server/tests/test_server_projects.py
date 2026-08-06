@@ -92,6 +92,7 @@ def test_project_validate_and_apply(tmp_path, isolated_project_store) -> None:
     output_pdf = tmp_path / "output.pdf"
     output_pdf.write_bytes(apply_response.content)
     with fitz.open(output_pdf) as doc:
+        # 默认 toc 已含 "Contents" 书签,语言感知注入判重后不再重复注入。
         assert doc.get_toc() == [[1, "Contents", 1], [1, "Chapter 1", 2]]
 
     persisted_response = client.get(f"/api/projects/{project['id']}/pdf")
@@ -493,3 +494,40 @@ def test_generation_job_without_progress_is_normalized(tmp_path) -> None:
 
     assert normalized["progress"]["phase"] == "completed"
     assert normalized["progress"]["completed_pages"] == 3
+
+
+def test_apply_toc_file_persists_injected_toc_page(tmp_path, isolated_project_store) -> None:
+    project = _create_project(tmp_path, page_count=4)
+    toc_text = json.dumps(
+        [
+            {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": []},
+        ]
+    )
+    save_response = client.put(
+        f"/api/projects/{project['id']}/toc-files/main",
+        json={"toc_json": toc_text},
+    )
+    assert save_response.status_code == 200
+
+    apply_response = client.post(
+        f"/api/projects/{project['id']}/toc-files/main/apply",
+        json={"page_offset": 0},
+    )
+    assert apply_response.status_code == 200
+
+    # 英文目录注入 "Contents" 书签,并持久化写入被 apply 的 toc 文件顶部。
+    persisted = client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"]
+    persisted_nodes = json.loads(persisted)
+    assert persisted_nodes[0]["title"] == "Contents"
+    assert persisted_nodes[0]["page"] == 1
+    assert persisted_nodes[0]["attribute"] == "absolute"
+    assert persisted_nodes[1]["title"] == "Chapter 1"
+
+    # 再次 apply 不会重复注入(幂等)。
+    apply_response = client.post(
+        f"/api/projects/{project['id']}/toc-files/main/apply",
+        json={"page_offset": 0},
+    )
+    assert apply_response.status_code == 200
+    persisted_nodes = json.loads(client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"])
+    assert [node["title"] for node in persisted_nodes] == ["Contents", "Chapter 1"]

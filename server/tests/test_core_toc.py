@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from bookmark_server.core import flatten_to_pymupdf_toc, parse_toc_items, validate_toc_json_structure
+from bookmark_server.core import (
+    flatten_to_pymupdf_toc,
+    inject_toc_page_bookmark,
+    parse_toc_items,
+    validate_toc_json_structure,
+)
 
 
 def test_validate_toc_json_structure_normalizes_nested_items() -> None:
@@ -159,3 +164,62 @@ def test_flatten_to_pymupdf_toc_rejects_out_of_range_absolute_page() -> None:
 
     with pytest.raises(ValueError, match="attribute=absolute"):
         flatten_to_pymupdf_toc(items, page_offset=-8, pdf_page_count=10)
+
+
+def test_inject_toc_page_bookmark_prepends_absolute_bookmark() -> None:
+    toc_data = [
+        {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": []},
+    ]
+    injected = inject_toc_page_bookmark(toc_data, toc_start=3, page_count=10)
+    assert injected[0] == {
+        "title": "Contents",
+        "page": 3,
+        "attribute": "absolute",
+        "children": [],
+    }
+    assert injected[1:] == toc_data
+    # 原列表不被修改
+    assert toc_data[0]["title"] == "Chapter 1"
+
+
+def test_inject_toc_page_bookmark_uses_cjk_title_for_chinese_toc() -> None:
+    toc_data = [
+        {"title": "第一章", "page": 1, "attribute": "relative", "children": []},
+        {"title": "1.1 小节", "page": 2, "attribute": "relative", "children": []},
+    ]
+    injected = inject_toc_page_bookmark(toc_data, toc_start=3, page_count=10)
+    assert injected[0]["title"] == "目录"
+
+
+def test_inject_toc_page_bookmark_uses_latin_title_for_mixed_latin_toc() -> None:
+    # 拉丁字符占多数时使用 Contents
+    toc_data = [
+        {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": []},
+        {"title": "2 附录", "page": 2, "attribute": "relative", "children": []},
+    ]
+    injected = inject_toc_page_bookmark(toc_data, toc_start=3, page_count=10)
+    assert injected[0]["title"] == "Contents"
+
+
+def test_inject_toc_page_bookmark_skips_out_of_range() -> None:
+    toc_data = [{"title": "A", "page": 1, "attribute": "relative", "children": []}]
+    assert inject_toc_page_bookmark(toc_data, toc_start=0, page_count=10) == toc_data
+    assert inject_toc_page_bookmark(toc_data, toc_start=11, page_count=10) == toc_data
+
+
+def test_inject_toc_page_bookmark_is_idempotent() -> None:
+    toc_data = [
+        {"title": "目录", "page": 3, "attribute": "absolute", "children": []},
+        {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": []},
+    ]
+    injected = inject_toc_page_bookmark(toc_data, toc_start=3, page_count=10)
+    assert injected == toc_data
+
+
+def test_inject_toc_page_bookmark_skips_when_contents_already_present() -> None:
+    toc_data = [
+        {"title": "Contents", "page": 3, "attribute": "absolute", "children": []},
+        {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": []},
+    ]
+    injected = inject_toc_page_bookmark(toc_data, toc_start=3, page_count=10)
+    assert injected == toc_data

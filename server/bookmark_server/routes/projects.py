@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 import fitz
 
-from ..core import apply_toc_to_pdf
+from ..core import apply_toc_to_pdf, inject_toc_page_bookmark
 from ..services.generation_jobs import generation_job_store
 from ..services.projects import store
 from ..services.toc_extraction import DEFAULT_FLAT_PROMPT, extract_toc_json, request_toc_from_vlm
@@ -33,6 +33,7 @@ class ProjectMetadataPayload(BaseModel):
     toc_start: int | None = None
     toc_end: int | None = None
     provider_id: str | None = None
+    inject_toc_page: bool | None = None
 
 
 class ValidatePayload(BaseModel):
@@ -288,6 +289,7 @@ def update_project_metadata(project_id: str, payload: ProjectMetadataPayload) ->
         toc_end=payload.toc_end,
         provider_id=payload.provider_id,
         provider_id_set="provider_id" in payload.model_fields_set,
+        inject_toc_page=payload.inject_toc_page,
     )
     return {"project": metadata}
 
@@ -304,6 +306,16 @@ def validate_project_toc(project_id: str, payload: ValidatePayload) -> dict[str,
     return {"validation": validation.to_dict(), "project": metadata}
 
 
+def _toc_with_injected_page(project: dict[str, Any], toc_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not project.get("inject_toc_page", True):
+        return toc_data
+    return inject_toc_page_bookmark(
+        toc_data,
+        toc_start=int(project.get("toc_start") or 1),
+        page_count=int(project.get("page_count") or 0),
+    )
+
+
 @router.post("/projects/{project_id}/apply")
 def apply_project_toc(project_id: str, payload: ApplyPayload) -> FileResponse:
     project = _project_or_404(project_id)
@@ -318,12 +330,13 @@ def apply_project_toc(project_id: str, payload: ApplyPayload) -> FileResponse:
         raise HTTPException(status_code=400, detail=detail)
 
     document_pdf = store.pdf_path(project_id)
+    toc_data = _toc_with_injected_page(project, validation.normalized_toc)
     temporary_pdf = document_pdf.with_name(f".{document_pdf.stem}.{uuid4().hex}.pdf")
     try:
         apply_toc_to_pdf(
             input_pdf=document_pdf,
             output_pdf=temporary_pdf,
-            toc_data=validation.normalized_toc,
+            toc_data=toc_data,
             page_offset=payload.page_offset,
         )
         temporary_pdf.replace(document_pdf)
@@ -362,13 +375,39 @@ def save_project_toc_file(project_id: str, toc_file_id: str, payload: TocPayload
     return {"project": metadata, "toc_json": payload.toc_json}
 
 
+def _prepare_toc_for_apply(
+    project_id: str,
+    project: dict[str, Any],
+    toc_text: str,
+    page_offset: int,
+) -> list[dict[str, Any]]:
+    """Validate TOC text and return it with the ToC page bookmark injected."""
+    validation = store.validate_toc(
+        project_id=project_id,
+        toc_text=toc_text,
+        page_offset=page_offset,
+    )
+    if not validation.valid or validation.normalized_toc is None:
+        detail = validation.issues[0].message if validation.issues else "Invalid TOC JSON"
+        raise HTTPException(status_code=400, detail=detail)
+    return _toc_with_injected_page(project, validation.normalized_toc)
+
+
 @router.post("/projects/{project_id}/toc-files/{toc_file_id}/apply")
 def apply_project_toc_file(project_id: str, toc_file_id: str, payload: TocFileApplyPayload) -> FileResponse:
     try:
         toc_text = store.read_toc_file(project_id, toc_file_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="TOC file not found") from exc
-    return apply_project_toc(project_id, ApplyPayload(toc_json=toc_text, page_offset=payload.page_offset))
+    project = _project_or_404(project_id)
+    toc_data = _prepare_toc_for_apply(project_id, project, toc_text, payload.page_offset)
+    # Persist the injected ToC page bookmark into the file being applied so the
+    # stored TOC stays in sync with what was written into the PDF.
+    store.save_toc_file(project_id, toc_file_id, json.dumps(toc_data, ensure_ascii=False, indent=2))
+    return apply_project_toc(
+        project_id,
+        ApplyPayload(toc_json=json.dumps(toc_data, ensure_ascii=False, indent=2), page_offset=payload.page_offset),
+    )
 
 
 @router.post("/projects/{project_id}/generate-toc")
@@ -478,13 +517,21 @@ def download_generation_job(job_id: str) -> Response:
     except (KeyError, TypeError) as exc:
         raise HTTPException(status_code=404, detail="Generated TOC candidate not found") from exc
     project = _project_or_404(str(job["project_id"]))
-    validation = store.validate_toc(str(job["project_id"]), toc_text, int(project.get("page_offset") or 0))
-    if not validation.valid or validation.normalized_toc is None:
-        raise HTTPException(status_code=400, detail="Generated TOC candidate is invalid")
+    toc_data = _prepare_toc_for_apply(
+        str(job["project_id"]),
+        project,
+        toc_text,
+        int(project.get("page_offset") or 0),
+    )
+    store.save_toc_file(
+        str(job["project_id"]),
+        str(toc_file["id"]),
+        json.dumps(toc_data, ensure_ascii=False, indent=2),
+    )
     document_pdf = store.pdf_path(str(job["project_id"]))
     temporary_pdf = document_pdf.with_name(f".{document_pdf.stem}.{uuid4().hex}.pdf")
     try:
-        apply_toc_to_pdf(document_pdf, temporary_pdf, validation.normalized_toc, int(project.get("page_offset") or 0))
+        apply_toc_to_pdf(document_pdf, temporary_pdf, toc_data, int(project.get("page_offset") or 0))
         content = temporary_pdf.read_bytes()
     finally:
         temporary_pdf.unlink(missing_ok=True)

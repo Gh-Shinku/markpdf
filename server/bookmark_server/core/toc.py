@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,64 @@ def validate_toc_json_structure(data: Any) -> list[dict[str, Any]]:
 def load_toc_json_file(toc_json_path: Path) -> list[dict[str, Any]]:
     data = json.loads(toc_json_path.read_text(encoding="utf-8"))
     return validate_toc_json_structure(data)
+
+
+TOC_PAGE_BOOKMARK_TITLE = "目录"
+TOC_PAGE_BOOKMARK_TITLE_EN = "Contents"
+
+_CJK_CHAR_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+
+
+def _toc_page_bookmark_title(toc_data: list[dict[str, Any]]) -> str:
+    """Pick the ToC page bookmark title from the language of the entries.
+
+    Counts CJK vs Latin letters across all titles; CJK majority picks
+    "目录", anything else (Latin, digits-only, or empty) picks "Contents".
+    """
+    cjk_chars = 0
+    latin_chars = 0
+    for node in toc_data:
+        title = str(node.get("title") or "")
+        for char in title:
+            if _CJK_CHAR_RE.match(char):
+                cjk_chars += 1
+            elif char.isascii() and char.isalpha():
+                latin_chars += 1
+    if cjk_chars > 0 and cjk_chars >= latin_chars:
+        return TOC_PAGE_BOOKMARK_TITLE
+    return TOC_PAGE_BOOKMARK_TITLE_EN
+
+
+def inject_toc_page_bookmark(
+    toc_data: list[dict[str, Any]],
+    toc_start: int,
+    page_count: int,
+) -> list[dict[str, Any]]:
+    """Prepend a top-level bookmark that jumps to the ToC page itself.
+
+    The ToC page is located at the configured toc_start (1-based PDF page
+    number), stored with the 'absolute' attribute so the page offset is not
+    applied again. The bookmark title follows the language of the existing
+    entries ("目录" for CJK-dominant trees, "Contents" otherwise). When
+    toc_start is out of range, or the tree already starts with a ToC page
+    bookmark (either language), the tree is returned unchanged (idempotent).
+    """
+    if not 1 <= toc_start <= page_count:
+        return toc_data
+    if toc_data and toc_data[0].get("title") in {
+        TOC_PAGE_BOOKMARK_TITLE,
+        TOC_PAGE_BOOKMARK_TITLE_EN,
+    }:
+        return toc_data
+    return [
+        {
+            "title": _toc_page_bookmark_title(toc_data),
+            "page": toc_start,
+            "attribute": PAGE_ATTRIBUTE_ABSOLUTE,
+            "children": [],
+        },
+        *toc_data,
+    ]
 
 
 def flatten_to_pymupdf_toc(

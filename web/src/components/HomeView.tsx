@@ -28,6 +28,7 @@ export type ProjectGenerationSettings = {
   tocEnd: number;
   pageOffset: number;
   providerId: string;
+  injectTocPage: boolean;
 };
 
 type GenerationSettingsForm = {
@@ -35,6 +36,7 @@ type GenerationSettingsForm = {
   tocEnd: string;
   pageOffset: string;
   providerId: string;
+  injectTocPage: boolean;
 };
 
 type HomeViewProps = {
@@ -475,6 +477,7 @@ function GenerationSettingsDialog({
           tocEnd: String(project.toc_end ?? project.page_count),
           pageOffset: String(project.page_offset ?? 0),
           providerId: project.provider_id ?? providers[0]?.id ?? "",
+          injectTocPage: project.inject_toc_page ?? true,
         },
       ]),
     ),
@@ -514,6 +517,7 @@ function GenerationSettingsDialog({
             <span>TOC end</span>
             <span>Offset</span>
             <span>VLM API</span>
+            <span>目录</span>
           </div>
           {parsedSettings.map(({ project, settings }) => {
             const form = forms[project.id];
@@ -562,6 +566,16 @@ function GenerationSettingsDialog({
                     ))}
                   </select>
                 </label>
+                <label className="generation-inject-field" title="注入目录 page">
+                  <input
+                    type="checkbox"
+                    checked={form.injectTocPage}
+                    aria-label={`${project.name} 注入目录 page`}
+                    onChange={(event) =>
+                      updateForm(project.id, { injectTocPage: event.target.checked })
+                    }
+                  />
+                </label>
               </div>
             );
           })}
@@ -582,6 +596,7 @@ function GenerationSettingsDialog({
                   tocEnd: settings.tocEnd,
                   pageOffset: settings.pageOffset,
                   providerId: settings.providerId,
+                  injectTocPage: settings.injectTocPage,
                 })),
               )
             }
@@ -608,6 +623,7 @@ function parseGenerationSettings(
   const tocEnd = Number.parseInt(form?.tocEnd ?? String(project.toc_end ?? project.page_count), 10);
   const pageOffset = Number.parseInt(form?.pageOffset ?? String(project.page_offset ?? 0), 10);
   const providerId = form?.providerId ?? project.provider_id ?? "";
+  const injectTocPage = form?.injectTocPage ?? project.inject_toc_page ?? true;
   const valid =
     Number.isInteger(tocStart) &&
     Number.isInteger(tocEnd) &&
@@ -616,7 +632,7 @@ function parseGenerationSettings(
     tocEnd >= tocStart &&
     tocEnd <= project.page_count &&
     providers.some((provider) => provider.id === providerId);
-  return { tocStart, tocEnd, pageOffset, providerId, valid };
+  return { tocStart, tocEnd, pageOffset, providerId, injectTocPage, valid };
 }
 
 function EmptyState() {

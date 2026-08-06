@@ -17,6 +17,7 @@ export type Project = {
   page_offset: number;
   toc_start: number;
   toc_end: number;
+  inject_toc_page: boolean;
   provider_id: string | null;
   page_count: number;
   created_at: string;

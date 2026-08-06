@@ -24,6 +24,26 @@ import {
   saveProjectTocFile,
 } from "../features/projects/api";
 
+function tocHistoryKey(projectId: string): string {
+  return `bookmark:toc-history:${projectId}`;
+}
+
+function readTocHistory(projectId: string): string | null {
+  try {
+    return localStorage.getItem(tocHistoryKey(projectId));
+  } catch {
+    return null;
+  }
+}
+
+function writeTocHistory(projectId: string, tocFileId: string): void {
+  try {
+    localStorage.setItem(tocHistoryKey(projectId), tocFileId);
+  } catch {
+    // 存储不可用时忽略历史记录。
+  }
+}
+
 export function WorkspaceRoute() {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();
@@ -40,9 +60,12 @@ export function WorkspaceRoute() {
     onPointerCancel,
     onKeyDown,
   } = useWorkspaceSplit(workspaceRef);
-  const [selectedTocFileId, setSelectedTocFileId] = useState("main");
+  const [selectedTocFileId, setSelectedTocFileId] = useState(
+    () => readTocHistory(projectId) ?? "main",
+  );
   const [tocText, setTocText] = useState("");
   const [pageOffset, setPageOffset] = useState("0");
+  const [injectTocPage, setInjectTocPage] = useState(true);
   const [pdfVersion, setPdfVersion] = useState(0);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
@@ -52,6 +75,7 @@ export function WorkspaceRoute() {
   const [isStartingGeneration, setIsStartingGeneration] = useState(false);
   const savedTocRef = useRef("");
   const savedOffsetRef = useRef("0");
+  const savedInjectTocPageRef = useRef(true);
   const savedTocStartRef = useRef("1");
   const savedTocEndRef = useRef("1");
   const tocSaveSequenceRef = useRef(0);
@@ -109,28 +133,43 @@ export function WorkspaceRoute() {
       pageOffset,
       tocStart,
       tocEnd,
+      injectTocPage,
     }: {
       pageOffset: number;
       tocStart: number;
       tocEnd: number;
+      injectTocPage: boolean;
       sequence: number;
-    }) => saveProjectMetadata(projectId, { pageOffset, tocStart, tocEnd }),
+    }) => saveProjectMetadata(projectId, { pageOffset, tocStart, tocEnd, injectTocPage }),
     onSuccess: (project, variables) => {
       if (variables.sequence !== metadataSaveSequenceRef.current) return;
       savedOffsetRef.current = String(variables.pageOffset);
       savedTocStartRef.current = String(variables.tocStart);
       savedTocEndRef.current = String(variables.tocEnd);
+      savedInjectTocPageRef.current = variables.injectTocPage;
       queryClient.setQueryData(projectKeys.detail(projectId), project);
     },
     onError: (error) => toast.error(error.message),
   });
 
   useEffect(() => {
-    setSelectedTocFileId("main");
+    setSelectedTocFileId(readTocHistory(projectId) ?? "main");
     setTocText("");
     savedTocRef.current = "";
     setPdfVersion(0);
   }, [projectId]);
+  useEffect(() => {
+    // 记住上次打开的文件,下次进入该 project 时恢复。
+    if (projectId) writeTocHistory(projectId, selectedTocFileId);
+  }, [projectId, selectedTocFileId]);
+  useEffect(() => {
+    // 历史记录指向的文件可能已不存在,回退到主 toc 文件。
+    const files = tocFilesQuery.data;
+    if (!files) return;
+    if (selectedTocFileId !== "main" && !files.some((file) => file.id === selectedTocFileId)) {
+      setSelectedTocFileId("main");
+    }
+  }, [tocFilesQuery.data, selectedTocFileId]);
   useEffect(() => {
     const toc = tocQuery.data;
     if (toc === undefined) return;
@@ -146,6 +185,8 @@ export function WorkspaceRoute() {
     savedTocStartRef.current = String(project.toc_start ?? 1);
     setTocEnd(String(project.toc_end ?? project.page_count));
     savedTocEndRef.current = String(project.toc_end ?? project.page_count);
+    setInjectTocPage(project.inject_toc_page ?? true);
+    savedInjectTocPageRef.current = project.inject_toc_page ?? true;
   }, [projectId, projectQuery.data]);
   useEffect(() => {
     if (!verifiedProviders.some((provider) => provider.id === providerId))
@@ -162,7 +203,8 @@ export function WorkspaceRoute() {
     if (
       pageOffset === savedOffsetRef.current &&
       tocStart === savedTocStartRef.current &&
-      tocEnd === savedTocEndRef.current
+      tocEnd === savedTocEndRef.current &&
+      injectTocPage === savedInjectTocPageRef.current
     )
       return;
     const parsedOffset = Number.parseInt(pageOffset, 10);
@@ -187,12 +229,13 @@ export function WorkspaceRoute() {
           pageOffset: parsedOffset,
           tocStart: parsedStart,
           tocEnd: parsedEnd,
+          injectTocPage,
           sequence,
         }),
       500,
     );
     return () => window.clearTimeout(timer);
-  }, [mutateMetadata, pageOffset, projectId, projectQuery.data, tocEnd, tocStart]);
+  }, [injectTocPage, mutateMetadata, pageOffset, projectId, projectQuery.data, tocEnd, tocStart]);
   useEffect(() => {
     const openFind = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
@@ -239,11 +282,18 @@ export function WorkspaceRoute() {
     if (
       pageOffset !== savedOffsetRef.current ||
       tocStart !== savedTocStartRef.current ||
-      tocEnd !== savedTocEndRef.current
+      tocEnd !== savedTocEndRef.current ||
+      injectTocPage !== savedInjectTocPageRef.current
     ) {
       const sequence = ++metadataSaveSequenceRef.current;
       pending.push(
-        mutateMetadataAsync({ pageOffset: offset, tocStart: start, tocEnd: end, sequence }),
+        mutateMetadataAsync({
+          pageOffset: offset,
+          tocStart: start,
+          tocEnd: end,
+          injectTocPage,
+          sequence,
+        }),
       );
     }
     await Promise.all(pending);
@@ -256,6 +306,11 @@ export function WorkspaceRoute() {
     try {
       const offset = await flushAutosave();
       await applyProjectTocFile(project.id, selectedTocFileId, offset);
+      // 注入的目录书签已写入 toc 文件,刷新编辑器与文件列表以保持一致。
+      void queryClient.invalidateQueries({
+        queryKey: projectKeys.tocFile(projectId, selectedTocFileId),
+      });
+      void queryClient.invalidateQueries({ queryKey: projectKeys.tocFiles(projectId) });
       setPdfVersion((value) => value + 1);
       toast.success("TOC applied to PDF");
     } catch (error) {
@@ -327,6 +382,7 @@ export function WorkspaceRoute() {
         tocFiles={tocFilesQuery.data ?? []}
         selectedTocFileId={selectedTocFileId}
         pageOffset={pageOffset}
+        injectTocPage={injectTocPage}
         theme={theme}
         canUseProjectActions={Boolean(tocText.trim() && pageOffset.trim() && !isPreviewing)}
         isPreviewing={isPreviewing}
@@ -343,6 +399,7 @@ export function WorkspaceRoute() {
         onOpenTasks={() => navigate("/tasks")}
         onOpenSettings={() => navigate("/settings", { state: { from: `/projects/${projectId}` } })}
         onPageOffsetChange={setPageOffset}
+        onInjectTocPageChange={setInjectTocPage}
         onOpenGenerateDialog={() => setGenerateDialogOpen(true)}
         onApplyPreview={() => void applySelectedToc()}
         onEditorChange={setTocText}

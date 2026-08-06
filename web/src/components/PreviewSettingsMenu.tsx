@@ -4,10 +4,17 @@ import styles from "./PreviewSettingsMenu.module.css";
 
 type PreviewSettingsMenuProps = {
   pageOffset: string;
+  injectTocPage: boolean;
   onPageOffsetChange: (value: string) => void;
+  onInjectTocPageChange: (value: boolean) => void;
 };
 
-export function PreviewSettingsMenu({ pageOffset, onPageOffsetChange }: PreviewSettingsMenuProps) {
+export function PreviewSettingsMenu({
+  pageOffset,
+  injectTocPage,
+  onPageOffsetChange,
+  onInjectTocPageChange,
+}: PreviewSettingsMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuId = useId();
@@ -54,6 +61,14 @@ export function PreviewSettingsMenu({ pageOffset, onPageOffsetChange }: PreviewS
               value={pageOffset}
               onChange={(event) => onPageOffsetChange(event.target.value)}
             />
+          </label>
+          <label className={styles.checkboxField}>
+            <input
+              type="checkbox"
+              checked={injectTocPage}
+              onChange={(event) => onInjectTocPageChange(event.target.checked)}
+            />
+            <span>注入目录 page</span>
           </label>
         </div>
       ) : null}

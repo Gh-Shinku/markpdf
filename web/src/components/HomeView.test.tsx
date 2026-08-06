@@ -11,6 +11,7 @@ const project: Project = {
   page_offset: 0,
   toc_start: 1,
   toc_end: 10,
+  inject_toc_page: true,
   provider_id: "provider-1",
   page_count: 10,
   created_at: "2026-08-05T00:00:00Z",

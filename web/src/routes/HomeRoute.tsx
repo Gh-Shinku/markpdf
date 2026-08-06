@@ -82,6 +82,7 @@ export function HomeRoute() {
             tocEnd: item.tocEnd,
             pageOffset: item.pageOffset,
             providerId: item.providerId,
+            injectTocPage: item.injectTocPage,
           }),
         ),
       );

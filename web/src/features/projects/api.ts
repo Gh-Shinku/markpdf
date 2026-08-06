@@ -56,6 +56,7 @@ export type ProjectMetadataUpdate = {
   tocStart?: number;
   tocEnd?: number;
   providerId?: string | null;
+  injectTocPage?: boolean;
 };
 
 export async function saveProjectMetadata(
@@ -69,6 +70,7 @@ export async function saveProjectMetadata(
       toc_start: metadata.tocStart,
       toc_end: metadata.tocEnd,
       provider_id: metadata.providerId,
+      inject_toc_page: metadata.injectTocPage,
     }),
   });
   return data.project;
