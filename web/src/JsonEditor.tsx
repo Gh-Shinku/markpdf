@@ -1,13 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
-import "monaco-editor/esm/vs/base/browser/ui/codicons/codiconStyles";
-import "monaco-editor/esm/vs/editor/contrib/cursorUndo/browser/cursorUndo";
-import "monaco-editor/esm/vs/editor/contrib/find/browser/findController";
-import "monaco-editor/esm/vs/editor/contrib/folding/browser/folding";
-import "monaco-editor/esm/vs/editor/contrib/multicursor/browser/multicursor";
-import "monaco-editor/esm/vs/editor/contrib/smartSelect/browser/smartSelect";
-import "monaco-editor/esm/vs/editor/contrib/wordOperations/browser/wordOperations";
-import "monaco-editor/esm/vs/editor/contrib/wordPartOperations/browser/wordPartOperations";
+import "monaco-editor/esm/vs/editor/editor.all";
 import "monaco-editor/esm/vs/language/json/monaco.contribution";
 
 type JsonEditorProps = {
