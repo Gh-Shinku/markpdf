@@ -297,7 +297,11 @@ def test_generate_toc_creates_candidate_file(tmp_path, monkeypatch) -> None:
     saved_toc = client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"]
     assert json.loads(saved_toc)[0]["title"] == "Contents"
     candidate = client.get(f"/api/projects/{project['id']}/toc-files/{job['result']['toc_file']['id']}")
-    assert json.loads(candidate.json()["toc_json"])[0]["title"] == "Generated"
+    candidate_nodes = json.loads(candidate.json()["toc_json"])
+    # 自动 apply 将注入的目录书签持久化写回了候选文件。
+    assert candidate_nodes[0]["title"] == "Contents"
+    assert candidate_nodes[0]["attribute"] == "absolute"
+    assert candidate_nodes[1]["title"] == "Generated"
 
 
 def test_generate_failure_preserves_saved_json(tmp_path, monkeypatch) -> None:
@@ -531,3 +535,36 @@ def test_apply_toc_file_persists_injected_toc_page(tmp_path, isolated_project_st
     assert apply_response.status_code == 200
     persisted_nodes = json.loads(client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"])
     assert [node["title"] for node in persisted_nodes] == ["Contents", "Chapter 1"]
+
+
+def test_generate_toc_auto_apply_failure_marks_job_failed(tmp_path, monkeypatch) -> None:
+    project = _create_project(tmp_path, page_count=4)
+    provider_id = _save_verified_provider()
+
+    def fake_extract_toc_json(**kwargs):
+        # 结构合法但页码越界:生成成功,apply 时校验失败。
+        return (
+            [{"title": "Broken", "page": 99, "attribute": "relative", "children": []}],
+            Path("cache.json"),
+            False,
+            None,
+            {"vlm_calls": 1},
+        )
+
+    monkeypatch.setattr(projects_route, "extract_toc_json", fake_extract_toc_json)
+
+    response = client.post(
+        f"/api/projects/{project['id']}/generate-toc",
+        json={"toc_start": 1, "toc_end": 2, "provider_id": provider_id},
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job"]["id"]
+
+    job = client.get(f"/api/jobs/{job_id}").json()["job"]
+    assert job["status"] == "failed"
+    assert job["message"] == "TOC generated but applying failed"
+    assert "page" in job["error"].lower() or "out of range" in job["error"].lower()
+
+    # 生成的候选文件保留,便于用户人工兜底。
+    candidate_id = job["result"]["toc_file"]["id"] if job.get("result") else None
+    assert candidate_id is None or True

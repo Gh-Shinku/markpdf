@@ -193,9 +193,24 @@ def _run_generate_toc_job(
         )
         toc_text = json.dumps(toc_data, ensure_ascii=False, indent=2)
         toc_file = store.create_generated_toc_file(project_id, job_id, toc_text, _provider_snapshot(settings))
+        try:
+            # 自动应用生成的 TOC。结构/语法问题会使应用失败,
+            # 此时任务标记失败并在任务列表中展示,便于人工兜底。
+            apply_project_toc_file(
+                project_id,
+                str(toc_file["id"]),
+                TocFileApplyPayload(page_offset=int(store.get_project(project_id).get("page_offset") or 0)),
+            )
+        except Exception as exc:
+            generation_job_store.mark_failed(
+                job_id,
+                "TOC generated but applying failed",
+                str(exc),
+            )
+            return
         generation_job_store.mark_succeeded(
             job_id,
-            "Generated a TOC candidate",
+            "TOC generated and applied",
             {
                 "project": store.get_project(project_id),
                 "toc_file": toc_file,
