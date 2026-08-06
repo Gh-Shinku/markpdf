@@ -1,7 +1,25 @@
 import { requestJson } from "../../api";
-import type { VlmProvider, VlmProviderDraft } from "../../types";
+import type { TocPrompts, VlmProvider, VlmProviderDraft } from "../../types";
 
 export const settingsKey = ["settings", "providers"] as const;
+
+export const promptsKey = ["settings", "prompts"] as const;
+
+export type TocPromptsResponse = {
+  prompts: TocPrompts;
+  defaults: TocPrompts;
+};
+
+export async function getPrompts(): Promise<TocPromptsResponse> {
+  return requestJson<TocPromptsResponse>("/api/settings/prompts");
+}
+
+export async function savePrompts(prompts: TocPrompts): Promise<TocPromptsResponse> {
+  return requestJson<TocPromptsResponse>("/api/settings/prompts", {
+    method: "PUT",
+    body: JSON.stringify(prompts),
+  });
+}
 
 export async function getProviders(): Promise<VlmProvider[]> {
   const data = await requestJson<{ providers: VlmProvider[] }>("/api/settings/providers");

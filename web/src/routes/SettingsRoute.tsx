@@ -4,8 +4,16 @@ import { toast } from "sonner";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SettingsView } from "../components/SettingsView";
 import { useThemePreference } from "../hooks/useThemePreference";
-import { getProviders, saveProviders, settingsKey, testProvider } from "../features/settings/api";
-import type { VlmProviderDraft } from "../types";
+import {
+  getPrompts,
+  getProviders,
+  promptsKey,
+  savePrompts,
+  saveProviders,
+  settingsKey,
+  testProvider,
+} from "../features/settings/api";
+import type { TocPrompts, VlmProviderDraft } from "../types";
 
 export function SettingsRoute() {
   const navigate = useNavigate();
@@ -13,7 +21,9 @@ export function SettingsRoute() {
   const queryClient = useQueryClient();
   const { preference, setPreference } = useThemePreference();
   const providersQuery = useQuery({ queryKey: settingsKey, queryFn: getProviders });
+  const promptsQuery = useQuery({ queryKey: promptsKey, queryFn: getPrompts });
   const [drafts, setDrafts] = useState<VlmProviderDraft[]>([]);
+  const [promptDrafts, setPromptDrafts] = useState<TocPrompts>({ flat: "", tree: "" });
   useEffect(() => {
     if (providersQuery.data)
       setDrafts(
@@ -26,10 +36,18 @@ export function SettingsRoute() {
         })),
       );
   }, [providersQuery.data]);
+  useEffect(() => {
+    if (promptsQuery.data) setPromptDrafts(promptsQuery.data.prompts);
+  }, [promptsQuery.data]);
   const saveMutation = useMutation({
-    mutationFn: saveProviders,
-    onSuccess: (providers) => {
+    mutationFn: async () => {
+      const providers = await saveProviders(drafts);
+      const promptsResponse = await savePrompts(promptDrafts);
+      return { providers, promptsResponse };
+    },
+    onSuccess: ({ providers, promptsResponse }) => {
       queryClient.setQueryData(settingsKey, providers);
+      queryClient.setQueryData(promptsKey, promptsResponse);
       setDrafts(
         providers.map((item) => ({
           id: item.id,
@@ -39,7 +57,8 @@ export function SettingsRoute() {
           apiKey: "",
         })),
       );
-      toast.success("VLM APIs saved");
+      setPromptDrafts(promptsResponse.prompts);
+      toast.success("Settings saved");
     },
     onError: (error) => toast.error(error.message),
   });
@@ -60,14 +79,17 @@ export function SettingsRoute() {
     <SettingsView
       providers={providersQuery.data ?? []}
       drafts={drafts}
+      prompts={promptDrafts}
+      defaultPrompts={promptsQuery.data?.defaults ?? { flat: "", tree: "" }}
       themePreference={preference}
       testingProviderId={testMutation.isPending ? testMutation.variables : null}
       onProvidersChange={setDrafts}
+      onPromptsChange={setPromptDrafts}
       onThemePreferenceChange={setPreference}
       onBack={() => navigate(from && from !== "/settings" ? from : "/")}
       onOpenHome={() => navigate("/")}
       onOpenTasks={() => navigate("/tasks")}
-      onSave={() => saveMutation.mutate(drafts)}
+      onSave={() => saveMutation.mutate()}
       onTest={(id) => testMutation.mutate(id)}
     />
   );

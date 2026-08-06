@@ -15,6 +15,64 @@ from openai import OpenAI
 from ..core import validate_toc_json_structure
 
 
+DEFAULT_PROMPTS: dict[str, str] = {
+    "flat": (
+        "Role: You are a high-precision OCR Data Entry Clerk.\n"
+        "Task: Extract ToC entries from the current page as a FLAT list of items.\n\n"
+        "### Specific Rules:\n"
+        "1. **Flat Output**: Do NOT nest items. Every entry must be a direct element of the root array.\n"
+        "2. **Text Cleaning**: \n"
+        "   - Merge multi-line titles into a single string.\n"
+        "   - Remove leader dots (e.g., 'Chapter 1.......10' becomes text:'Chapter 1', page:10).\n"
+        "3. **Page Range**: Only process the content visible on THIS page. Do not guess what's on the next page.\n"
+        "4. **Filtering**: Ignore headers, footers, and decorative elements.\n"
+        "5. **Verbatim**: Keep the original numbering (e.g., '1.2.3', 'Appendix A') within the 'text' field.\n\n"
+        "### Output Format:\n"
+        "Return ONLY a JSON array. No markdown, no conversational text.\n"
+        'Schema: [{"text": "Full Title String", "page": integer_or_null}, ...]'
+    ),
+    "tree": (
+        "Role: You are a professional Document Digitization Specialist.\n"
+        "Task: Extract the Table of Contents (ToC) from the provided images into a structured JSON tree.\n"
+        "Context: These images cover the ToC from book pages {toc_start} to {toc_end}.\n\n"
+        "### Extraction Rules:\n"
+        "1. **Hierarchical Logic**: Determine levels based on indentation, font size, and numbering (e.g., 1.1 is a child of 1).\n"
+        "2. **Content**: Extract the exact title text. Do not include leading dots (......) or filler characters.\n"
+        "3. **Page Numbers**: Use the printed page numbers shown in the image. Set to null if not visible.\n"
+        "4. **Page Attribute**: Set 'attribute' to 'relative' for normal printed book page numbers.\n"
+        "5. **Completeness**: Every single entry visible in the images must be included. Do not summarize.\n"
+        "6. **Empty Children**: The 'children' key must be an empty list [] if no sub-items exist.\n\n"
+        "### Output Format (Strict JSON):\n"
+        "Return ONLY a valid JSON array at the top level. No markdown blocks, no preamble, no explanations.\n"
+        "Example Structure:\n"
+        "[\n"
+        '  {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": [\n'
+        '    {"title": "1.1 Sub-section", "page": 2, "attribute": "relative", "children": []}\n'
+        "  ]}\n"
+        "]"
+    ),
+}
+
+
+def render_prompt_template(
+    template: str,
+    toc_start: int,
+    toc_end: int,
+    pdf_name: str,
+) -> str:
+    """Render a prompt template with the supported placeholder variables.
+
+    Placeholders are replaced with plain str.replace (not str.format) so that
+    JSON braces in templates (e.g. the tree example structure) pass through
+    untouched. Page numbers render 1-based, matching the user-facing selection.
+    """
+    return (
+        template.replace("{toc_start}", str(toc_start + 1))
+        .replace("{toc_end}", str(toc_end + 1))
+        .replace("{pdf_name}", pdf_name)
+    )
+
+
 FlatPageEventCallback = Callable[
     [
         int,  # page_call_index (1-based within TOC slice)
@@ -212,18 +270,31 @@ class TOCAssembler:
 
 
 class BaseExtractor(ABC):
-    def __init__(self, toc_start: int, toc_end: int) -> None:
+    def __init__(
+        self,
+        toc_start: int,
+        toc_end: int,
+        prompt: str | None = None,
+        pdf_name: str = "",
+    ) -> None:
         self.toc_start = toc_start
         self.toc_end = toc_end
+        self.prompt = prompt
+        self.pdf_name = pdf_name
 
     @property
     @abstractmethod
     def mode(self) -> str:
         raise NotImplementedError
 
-    @abstractmethod
     def build_prompt(self) -> str:
-        raise NotImplementedError
+        template = self.prompt or DEFAULT_PROMPTS[self.mode]
+        return render_prompt_template(
+            template,
+            toc_start=self.toc_start,
+            toc_end=self.toc_end,
+            pdf_name=self.pdf_name,
+        )
 
     @abstractmethod
     def parse_response(self, raw_text: str) -> list[dict[str, Any]]:
@@ -251,28 +322,6 @@ class TreeExtractor(BaseExtractor):
     def mode(self) -> str:
         return "tree"
 
-    def build_prompt(self) -> str:
-        return (
-            "Role: You are a professional Document Digitization Specialist.\n"
-            "Task: Extract the Table of Contents (ToC) from the provided images into a structured JSON tree.\n"
-            f"Context: These images cover the ToC from book pages {self.toc_start} to {self.toc_end}.\n\n"
-            "### Extraction Rules:\n"
-            "1. **Hierarchical Logic**: Determine levels based on indentation, font size, and numbering (e.g., 1.1 is a child of 1).\n"
-            "2. **Content**: Extract the exact title text. Do not include leading dots (......) or filler characters.\n"
-            "3. **Page Numbers**: Use the printed page numbers shown in the image. Set to null if not visible.\n"
-            "4. **Page Attribute**: Set 'attribute' to 'relative' for normal printed book page numbers.\n"
-            "5. **Completeness**: Every single entry visible in the images must be included. Do not summarize.\n"
-            "6. **Empty Children**: The 'children' key must be an empty list [] if no sub-items exist.\n\n"
-            "### Output Format (Strict JSON):\n"
-            "Return ONLY a valid JSON array at the top level. No markdown blocks, no preamble, no explanations.\n"
-            "Example Structure:\n"
-            "[\n"
-            '  {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": [\n'
-            '    {"title": "1.1 Sub-section", "page": 2, "attribute": "relative", "children": []}\n'
-            "  ]}\n"
-            "]"
-        )
-
     def parse_response(self, raw_text: str) -> list[dict[str, Any]]:
         json_text = extract_json_text(raw_text)
         parsed = json.loads(json_text)
@@ -280,31 +329,20 @@ class TreeExtractor(BaseExtractor):
 
 
 class FlatExtractor(BaseExtractor):
-    def __init__(self, toc_start: int, toc_end: int) -> None:
-        super().__init__(toc_start=toc_start, toc_end=toc_end)
+    def __init__(
+        self,
+        toc_start: int,
+        toc_end: int,
+        prompt: str | None = None,
+        pdf_name: str = "",
+    ) -> None:
+        super().__init__(toc_start=toc_start, toc_end=toc_end, prompt=prompt, pdf_name=pdf_name)
         self.assembler = TOCAssembler()
 
     @property
     def mode(self) -> str:
         return "flat"
 
-    def build_prompt(self) -> str:
-        return (
-            "Role: You are a high-precision OCR Data Entry Clerk.\n"
-            "Task: Extract ToC entries from the current page as a FLAT list of items.\n\n"
-            "### Specific Rules:\n"
-            "1. **Flat Output**: Do NOT nest items. Every entry must be a direct element of the root array.\n"
-            "2. **Text Cleaning**: \n"
-            "   - Merge multi-line titles into a single string.\n"
-            "   - Remove leader dots (e.g., 'Chapter 1.......10' becomes text:'Chapter 1', page:10).\n"
-            "3. **Page Range**: Only process the content visible on THIS page. Do not guess what's on the next page.\n"
-            "4. **Filtering**: Ignore headers, footers, and decorative elements.\n"
-            "5. **Verbatim**: Keep the original numbering (e.g., '1.2.3', 'Appendix A') within the 'text' field.\n\n"
-            "### Output Format:\n"
-            "Return ONLY a JSON array. No markdown, no conversational text.\n"
-            'Schema: [{"text": "Full Title String", "page": integer_or_null}, ...]'
-        )
-    
     def parse_response(self, raw_text: str) -> list[dict[str, Any]]:
         json_text = extract_json_text(raw_text)
         parsed = json.loads(json_text)
@@ -393,6 +431,7 @@ def make_cache_file_path(
     dpi: int,
     model: str,
     mode: str,
+    prompt: str,
 ) -> Path:
     stat = input_pdf.stat()
     key_data = {
@@ -404,6 +443,7 @@ def make_cache_file_path(
         "dpi": dpi,
         "model": model,
         "mode": mode,
+        "prompt": prompt,
     }
     digest = hashlib.sha256(
         json.dumps(key_data, ensure_ascii=True, sort_keys=True).encode("utf-8")
@@ -418,6 +458,7 @@ def make_flat_pages_work_dir(
     toc_end: int,
     dpi: int,
     model: str,
+    prompt: str,
 ) -> Path:
     key_data = {
         "input_pdf": str(input_pdf.resolve()),
@@ -426,6 +467,7 @@ def make_flat_pages_work_dir(
         "dpi": dpi,
         "model": model,
         "mode": "flat-pages",
+        "prompt": prompt,
     }
     digest = hashlib.sha256(
         json.dumps(key_data, ensure_ascii=True, sort_keys=True).encode("utf-8")
@@ -440,6 +482,7 @@ def find_matching_flat_raw_cache(
     toc_end: int,
     model: str,
     dpi: int,
+    prompt: str,
 ) -> Path | None:
     raw_files = sorted(cache_dir.glob("flat_raw_*.json"), reverse=True)
     input_pdf_resolved = str(input_pdf.resolve())
@@ -458,6 +501,15 @@ def find_matching_flat_raw_cache(
         if data.get("toc_start") != toc_start or data.get("toc_end") != toc_end:
             continue
         if data.get("model") != model or data.get("dpi") != dpi:
+            continue
+
+        # Legacy records (created before prompts were configurable) have no
+        # prompt field; they only match when the default prompt is requested.
+        recorded_prompt = data.get("prompt")
+        if recorded_prompt is None:
+            if prompt != DEFAULT_PROMPTS.get("flat"):
+                continue
+        elif recorded_prompt != prompt:
             continue
 
         raw_pdf = data.get("input_pdf")
@@ -480,11 +532,17 @@ def find_matching_flat_raw_cache(
     return None
 
 
-def _build_extractor(mode: str, toc_start: int, toc_end: int) -> BaseExtractor:
+def _build_extractor(
+    mode: str,
+    toc_start: int,
+    toc_end: int,
+    prompt: str | None = None,
+    pdf_name: str = "",
+) -> BaseExtractor:
     if mode == "tree":
-        return TreeExtractor(toc_start=toc_start, toc_end=toc_end)
+        return TreeExtractor(toc_start=toc_start, toc_end=toc_end, prompt=prompt, pdf_name=pdf_name)
     if mode == "flat":
-        return FlatExtractor(toc_start=toc_start, toc_end=toc_end)
+        return FlatExtractor(toc_start=toc_start, toc_end=toc_end, prompt=prompt, pdf_name=pdf_name)
     raise ValueError(f"Unsupported extraction mode: {mode}")
 
 
@@ -501,10 +559,18 @@ def extract_toc_json(
     mode: str,
     rescan: bool = False,
     rescan_pages: list[int] | None = None,
+    prompt: str | None = None,
     on_page_rendered: Callable[[int, int], None] | None = None,
     on_flat_page_event: FlatPageEventCallback | None = None,
 ) -> tuple[list[dict[str, Any]], Path, bool, Path | None, dict[str, Any]]:
-    extractor = _build_extractor(mode=mode, toc_start=toc_start, toc_end=toc_end)
+    extractor = _build_extractor(
+        mode=mode,
+        toc_start=toc_start,
+        toc_end=toc_end,
+        prompt=prompt,
+        pdf_name=input_pdf.stem,
+    )
+    rendered_prompt = extractor.build_prompt()
 
     stats: dict[str, Any] = {
         "vlm_calls": 0,
@@ -522,6 +588,7 @@ def extract_toc_json(
         dpi=dpi,
         model=model,
         mode=extractor.mode,
+        prompt=rendered_prompt,
     )
 
     # Priority 1: final TOC cache.
@@ -540,6 +607,7 @@ def extract_toc_json(
             toc_end=toc_end,
             dpi=dpi,
             model=model,
+            prompt=rendered_prompt,
         )
         work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -557,6 +625,7 @@ def extract_toc_json(
                 toc_end=toc_end,
                 model=model,
                 dpi=dpi,
+                prompt=rendered_prompt,
             )
             if fallback_raw is not None:
                 raw_data = json.loads(fallback_raw.read_text(encoding="utf-8"))
@@ -725,6 +794,7 @@ def extract_toc_json(
                     "toc_end": toc_end,
                     "model": model,
                     "dpi": dpi,
+                    "prompt": rendered_prompt,
                     "work_dir": str(work_dir),
                     "pages": [
                         {

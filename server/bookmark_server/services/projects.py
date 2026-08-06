@@ -12,6 +12,7 @@ from uuid import uuid4
 import fitz
 
 from ..core import flatten_to_pymupdf_toc, parse_toc_items, validate_toc_json_structure
+from .toc_extraction import DEFAULT_PROMPTS
 
 
 DEFAULT_TOC = [
@@ -261,6 +262,22 @@ class ProjectStore:
         # Migrate the legacy single-provider file without changing its credential.
         return [self._provider_record("default", str(raw.get("model") or "Default VLM"), str(raw.get("base_url") or ""), str(raw.get("model") or ""), str(raw.get("api_key") or ""))]
 
+    def _read_settings(self) -> dict[str, Any]:
+        if not self.settings_file.exists():
+            return {}
+        try:
+            raw = json.loads(self.settings_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return raw if isinstance(raw, dict) else {}
+
+    def _write_settings(self, raw: dict[str, Any]) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.settings_file.write_text(
+            json.dumps(raw, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
     def save_llm_providers(self, providers: list[dict[str, Any]]) -> list[dict[str, Any]]:
         self.root.mkdir(parents=True, exist_ok=True)
         existing = {str(item["id"]): item for item in self.read_llm_providers()}
@@ -284,7 +301,9 @@ class ProjectStore:
             if previous and self._provider_connection(previous) == self._provider_connection(provider):
                 provider.update({key: previous.get(key) for key in ("verification_status", "verification_message", "verified_at")})
             normalized.append(provider)
-        self.settings_file.write_text(json.dumps({"providers": normalized}, ensure_ascii=False, indent=2), encoding="utf-8")
+        raw = self._read_settings()
+        raw["providers"] = normalized
+        self._write_settings(raw)
         return normalized
 
     def save_llm_settings(self, settings: dict[str, Any]) -> dict[str, Any]:
@@ -311,6 +330,30 @@ class ProjectStore:
             raise KeyError(provider_id)
         return provider
 
+    def read_toc_prompts(self) -> dict[str, str]:
+        """Return the effective ToC prompts (stored value or built-in default)."""
+        stored = self._read_settings().get("prompts")
+        if not isinstance(stored, dict):
+            stored = {}
+        result: dict[str, str] = {}
+        for mode, default in DEFAULT_PROMPTS.items():
+            value = stored.get(mode)
+            result[mode] = value if isinstance(value, str) and value.strip() else default
+        return result
+
+    def save_toc_prompts(self, prompts: dict[str, str]) -> dict[str, str]:
+        """Persist ToC prompt overrides, preserving the providers key."""
+        normalized: dict[str, str] = {}
+        for mode, default in DEFAULT_PROMPTS.items():
+            value = prompts.get(mode)
+            if not isinstance(value, str):
+                value = ""
+            normalized[mode] = value.strip()
+        raw = self._read_settings()
+        raw["prompts"] = normalized
+        self._write_settings(raw)
+        return self.read_toc_prompts()
+
     def record_provider_verification(self, provider_id: str, status: str, message: str) -> dict[str, Any]:
         providers = self.read_llm_providers()
         provider = next((item for item in providers if item["id"] == provider_id), None)
@@ -319,8 +362,9 @@ class ProjectStore:
         provider["verification_status"] = status
         provider["verification_message"] = message
         provider["verified_at"] = utc_now_iso()
-        self.root.mkdir(parents=True, exist_ok=True)
-        self.settings_file.write_text(json.dumps({"providers": providers}, ensure_ascii=False, indent=2), encoding="utf-8")
+        raw = self._read_settings()
+        raw["providers"] = providers
+        self._write_settings(raw)
         return self._public_provider(provider)
 
     def list_toc_files(self, project_id: str) -> list[dict[str, Any]]:

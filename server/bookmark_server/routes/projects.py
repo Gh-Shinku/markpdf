@@ -14,11 +14,14 @@ import fitz
 from ..core import apply_toc_to_pdf
 from ..services.generation_jobs import generation_job_store
 from ..services.projects import store
-from ..services.toc_extraction import extract_toc_json, request_toc_from_vlm
+from ..services.toc_extraction import DEFAULT_PROMPTS, extract_toc_json, request_toc_from_vlm
 
 
 router = APIRouter(tags=["projects"])
 generation_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="toc-generation")
+
+
+MAX_PROMPT_LENGTH = 20000
 
 
 class TocPayload(BaseModel):
@@ -65,6 +68,11 @@ class ProviderPayload(BaseModel):
 
 class ProvidersPayload(BaseModel):
     providers: list[ProviderPayload]
+
+
+class PromptsPayload(BaseModel):
+    flat: str | None = None
+    tree: str | None = None
 
 
 class TocFileApplyPayload(BaseModel):
@@ -173,6 +181,7 @@ def _run_generate_toc_job(
             cache_dir=store.cache_dir(),
             overwrite_cache=False,
             mode="flat",
+            prompt=store.read_toc_prompts()["flat"],
             on_flat_page_event=record_page_progress,
         )
         generation_job_store.update_progress(
@@ -509,6 +518,30 @@ def save_llm_providers(payload: ProvidersPayload) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"providers": [store._public_provider(item) for item in providers]}
+
+
+@router.get("/settings/prompts")
+def get_toc_prompts() -> dict[str, Any]:
+    return {
+        "prompts": store.read_toc_prompts(),
+        "defaults": dict(DEFAULT_PROMPTS),
+    }
+
+
+@router.put("/settings/prompts")
+def save_toc_prompts(payload: PromptsPayload) -> dict[str, Any]:
+    prompts = {"flat": payload.flat or "", "tree": payload.tree or ""}
+    for mode, text in prompts.items():
+        if len(text) > MAX_PROMPT_LENGTH:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Prompt for '{mode}' exceeds {MAX_PROMPT_LENGTH} characters",
+            )
+    saved = store.save_toc_prompts(prompts)
+    return {
+        "prompts": saved,
+        "defaults": dict(DEFAULT_PROMPTS),
+    }
 
 
 @router.post("/settings/providers/{provider_id}/test")
