@@ -36,3 +36,14 @@ Example:
 ```text
 [feat] add user profile page
 ```
+
+Commit changes as separate commits when they cover multiple independent concerns
+(one concern per commit):
+
+```text
+[feat] add toc page injection option
+[feat] restore last opened toc file
+```
+
+If the concerns cannot be cleanly separated because they share the same files,
+a coarse-grained single commit is acceptable.
