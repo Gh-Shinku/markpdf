@@ -8,6 +8,7 @@ import { useRef, useState } from "react";
 import {
   ArrowLeft,
   BookMarked,
+  ChevronDown,
   Download,
   FileText,
   Files,
@@ -206,15 +207,27 @@ export function WorkspaceView({
               </button>
               <h2>TOC Editor</h2>
             </div>
-            <button
-              className="secondary-action"
-              type="button"
-              disabled={!project || isGenerating}
-              onClick={onOpenGenerateDialog}
-            >
-              <Wand2 size={16} />
-              AI Generate
-            </button>
+            <div className={previewStyles.actionGroup}>
+              <button
+                className={`primary-action ${previewStyles.previewButton}`}
+                type="button"
+                disabled={!project || isGenerating}
+                onClick={onOpenGenerateDialog}
+              >
+                <Wand2 size={16} />
+                AI Generate
+              </button>
+              <button
+                className={previewStyles.trigger}
+                type="button"
+                disabled={!project || isGenerating}
+                title="Generate settings"
+                aria-label="Generate settings"
+                onClick={onOpenGenerateDialog}
+              >
+                <ChevronDown size={16} aria-hidden="true" />
+              </button>
+            </div>
           </div>
           <div
             className={`toc-editor-workspace${isFileExplorerOpen ? " explorer-open" : ""}`}

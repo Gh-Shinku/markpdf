@@ -3,6 +3,7 @@
 @import url("./styles/shell.css");
 @import url("./styles/actions.css");
 @import url("./styles/modals.css");
+@import url("./styles/generate-dialog.css");
 @import url("./styles/settings.css");
 @import url("./styles/workspace.css");
 @import url("./styles/pdf-viewer.css");
