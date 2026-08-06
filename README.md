@@ -2,9 +2,12 @@
 
 用于本地管理 PDF 目录 JSON、生成书签并预览结果的桌面式 WebUI。
 
+- 使用指南(导入、编辑、AI 生成、设置):[docs/USAGE.md](docs/USAGE.md)
+- 应用内置文档页面:启动后访问 `http://127.0.0.1:5173/docs`
+
 ## Run
 
-启动后端：
+启动后端:
 
 ```bash
 cd server
@@ -13,7 +16,7 @@ uv pip install -e .
 uv run uvicorn bookmark_server.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-启动前端：
+启动前端:
 
 ```bash
 cd web
@@ -26,13 +29,18 @@ npm run dev
 项目数据默认存储在 `server/workspace_data/`。可在启动后端时通过
 `BOOKMARK_WORKSPACE_DATA` 指定其他本地目录。
 
-## Workspace
+## Dev
 
-- 导入 PDF 创建本地项目，并在 Monaco 编辑器中维护 TOC JSON。
-- 编辑 JSON 和页码偏移会自动保存，但只有点击 Preview 才会写入 PDF。
-- Preview 成功时替换项目唯一的 `document.pdf`；失败时保留最近一次成功版本。
-- Settings 页面配置 OpenAI 兼容 VLM，以从指定目录页生成 TOC JSON。
+- 服务端测试:`cd server && uv run pytest`(或 `uv run pytest -q`)。
+- 前端检查:`cd web && npm run check`(format / lint / css lint / build / test)。
+- 目录结构:
 
-TOC JSON 使用数组根节点。每项包含 `title`、`page`、可选 `attribute`
-（`relative` 或 `absolute`）和 `children`。相对页码会加上项目页码偏移，
-绝对页码直接使用 PDF 的一基页码。
+```text
+server/bookmark_server/
+  core/        PDF 书签写入与 TOC 校验、注入逻辑
+  routes/      FastAPI 路由(projects、jobs、settings)
+  services/    生成任务、VLM 提取管线(缓存、建树、层级校正)
+server/tests/  服务端测试
+web/src/       React 前端(AppNavigation、Home/Tasks/Settings/Workspace/Docs 页面)
+docs/          USAGE.md(用户指南,应用内渲染)
+```
