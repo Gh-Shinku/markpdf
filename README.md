@@ -8,6 +8,20 @@ A desktop-style web UI for managing PDF outline (bookmark) JSON locally, generat
 
 ## Run
 
+Launch the app with a single command (builds the frontend on first run,
+serves the API and the web UI on one port, and opens the browser):
+
+```bash
+./bookmark              # http://127.0.0.1:8000
+./bookmark --port 8123  # pick another port
+./bookmark --no-open    # skip opening the browser
+```
+
+The launcher stays in the foreground so you can watch the logs and the app
+URL. Press `Ctrl+C` to stop.
+
+### Development mode
+
 Start the backend:
 
 ```bash
@@ -26,6 +40,9 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:5173/`. Vite proxies `/api/*` to the local backend.
+`npm run build` outputs the production frontend into `web/dist`, which the
+backend serves automatically when present (`BOOKMARK_WEB_DIST` overrides the
+location).
 
 Project data is stored in `server/workspace_data/` by default. Set the
 `BOOKMARK_WORKSPACE_DATA` environment variable before starting the backend to

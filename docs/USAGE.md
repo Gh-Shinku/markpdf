@@ -18,8 +18,15 @@ vision language model (VLM), and writing the result back into the PDF.
 
 ## Getting Started
 
-1. Start the backend (see `README.md` for dev commands) and open the frontend at
-   `http://127.0.0.1:5173/`.
+1. Launch the app from the project root:
+
+   ```bash
+   ./bookmark
+   ```
+
+   The launcher builds the frontend on first run, serves the API and the web
+   UI on one port (`http://127.0.0.1:8000` by default), and opens the browser
+   automatically. See `README.md` for options (`--port`, `--no-open`).
 2. Upload one or more PDFs from the **Projects** page.
 3. Configure at least one OpenAI-compatible VLM API in **Settings** if you want
    to use AI generation.

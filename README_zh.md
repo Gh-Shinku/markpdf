@@ -8,6 +8,18 @@
 
 ## Run
 
+一条命令启动整个应用(首次运行会自动构建前端,API 与 Web UI 共用同一端口,并自动打开浏览器):
+
+```bash
+./bookmark              # http://127.0.0.1:8000
+./bookmark --port 8123  # 指定其他端口
+./bookmark --no-open    # 不自动打开浏览器
+```
+
+启动器在前台常驻,便于查看日志与应用 URL。按 `Ctrl+C` 停止。
+
+### 开发模式
+
 启动后端:
 
 ```bash
@@ -26,6 +38,8 @@ npm run dev
 ```
 
 打开 `http://127.0.0.1:5173/`。Vite 会将 `/api/*` 转发到本地后端。
+`npm run build` 将生产前端输出到 `web/dist`,后端检测到该目录后会自动托管
+(可用 `BOOKMARK_WEB_DIST` 覆盖路径)。
 
 项目数据默认存储在 `server/workspace_data/`。可在启动后端时通过
 `BOOKMARK_WORKSPACE_DATA` 指定其他本地目录。

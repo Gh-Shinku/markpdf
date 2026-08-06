@@ -43,9 +43,9 @@ describe("DocsView", () => {
 
     expect(screen.getByRole("heading", { name: "AI Generation" })).toBeTruthy();
     // fenced code block renders inside <pre>
-    const pre = document.querySelector(".doc-pre");
-    expect(pre).not.toBeNull();
-    expect(pre?.textContent).toContain('"indent": 0');
+    const pres = [...document.querySelectorAll(".doc-pre")];
+    expect(pres.length).toBeGreaterThanOrEqual(1);
+    expect(pres.some((pre) => pre.textContent?.includes('"indent": 0'))).toBe(true);
     // GFM table renders
     expect(screen.getAllByRole("table").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("columnheader", { name: "Field" })).toBeTruthy();
