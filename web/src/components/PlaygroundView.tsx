@@ -588,14 +588,28 @@ function AttachmentChip({
   attachment: PlaygroundAttachment;
   onRemove: () => void;
 }) {
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
   return (
-    <div className="playground-attachment-chip">
-      <img src={attachment.dataUrl} alt="" />
-      <span>{attachment.name}</span>
-      <button type="button" aria-label={`Remove ${attachment.name}`} onClick={onRemove}>
-        <X size={13} aria-hidden="true" />
-      </button>
-    </div>
+    <>
+      <div className="playground-attachment-chip">
+        <button
+          className="playground-attachment-chip-preview"
+          type="button"
+          aria-label={`Preview ${attachment.name}`}
+          onClick={() => setIsPreviewOpen(true)}
+        >
+          <img src={attachment.dataUrl} alt="" />
+          <span>{attachment.name}</span>
+        </button>
+        <button type="button" aria-label={`Remove ${attachment.name}`} onClick={onRemove}>
+          <X size={13} aria-hidden="true" />
+        </button>
+      </div>
+      {isPreviewOpen ? (
+        <AttachmentPreviewModal attachment={attachment} onClose={() => setIsPreviewOpen(false)} />
+      ) : null}
+    </>
   );
 }
 
@@ -613,27 +627,39 @@ function AttachmentPreview({ attachment }: { attachment: PlaygroundAttachment })
         <span>{attachment.name}</span>
       </button>
       {isPreviewOpen ? (
-        <div className="modal-backdrop" role="presentation" onClick={() => setIsPreviewOpen(false)}>
-          <div
-            className="playground-image-preview-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={attachment.name}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              className="icon-button"
-              type="button"
-              aria-label="Close image preview"
-              onClick={() => setIsPreviewOpen(false)}
-            >
-              <X size={16} aria-hidden="true" />
-            </button>
-            <img src={attachment.dataUrl} alt={attachment.name} />
-          </div>
-        </div>
+        <AttachmentPreviewModal attachment={attachment} onClose={() => setIsPreviewOpen(false)} />
       ) : null}
     </>
+  );
+}
+
+function AttachmentPreviewModal({
+  attachment,
+  onClose,
+}: {
+  attachment: PlaygroundAttachment;
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="playground-image-preview-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={attachment.name}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          className="icon-button"
+          type="button"
+          aria-label="Close image preview"
+          onClick={onClose}
+        >
+          <X size={16} aria-hidden="true" />
+        </button>
+        <img src={attachment.dataUrl} alt={attachment.name} />
+      </div>
+    </div>
   );
 }
 

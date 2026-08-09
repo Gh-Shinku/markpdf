@@ -46,6 +46,18 @@ const provider: VlmProvider = {
   verified_at: "2026-08-05T00:00:00Z",
 };
 
+const attachment: PlaygroundAttachment = {
+  id: "attachment-1",
+  type: "pdf_page",
+  project_id: project.id,
+  page: 1,
+  dpi: 220,
+  sha256: "hash",
+  name: "Book · page 1",
+  dataUrl:
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+};
+
 function renderPlayground(overrides: Partial<Parameters<typeof PlaygroundView>[0]> = {}) {
   const props: Parameters<typeof PlaygroundView>[0] = {
     projects: [project],
@@ -190,18 +202,17 @@ describe("PlaygroundView", () => {
     expect(await screen.findByText("raw answer")).toBeTruthy();
   });
 
+  it("opens a pending attachment image preview before sending", () => {
+    renderPlayground({ pendingAttachments: [attachment] });
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview Book · page 1" }));
+
+    expect(screen.getByRole("dialog", { name: "Book · page 1" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close image preview" }));
+    expect(screen.queryByRole("dialog", { name: "Book · page 1" })).toBeNull();
+  });
+
   it("opens a clicked message image preview", async () => {
-    const attachment: PlaygroundAttachment = {
-      id: "attachment-1",
-      type: "pdf_page",
-      project_id: project.id,
-      page: 1,
-      dpi: 220,
-      sha256: "hash",
-      name: "Book · page 1",
-      dataUrl:
-        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
-    };
     renderPlayground({
       initialMessages: [
         {

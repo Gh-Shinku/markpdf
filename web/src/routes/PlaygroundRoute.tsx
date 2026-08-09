@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import type { ThreadMessageLike } from "@assistant-ui/react";
 import { PlaygroundView } from "../components/PlaygroundView";
 import { projectKeys, listProjects } from "../features/projects/api";
+import { getDefaultPlaygroundPage } from "../features/playground/defaults";
 import {
   createPlaygroundChat,
   deletePlaygroundChat,
@@ -48,6 +49,7 @@ export function PlaygroundRoute() {
   const [selectedProviderId, setSelectedProviderId] = useState("");
   const [selectedChatId, setSelectedChatId] = useState("");
   const [pageNumber, setPageNumber] = useState("1");
+  const pageDefaultProjectIdRef = useRef("");
   const [pendingAttachments, setPendingAttachments] = useState<PlaygroundAttachment[]>([]);
   const pendingAttachmentsRef = useRef<PlaygroundAttachment[]>([]);
   const [sentAttachmentsByMessageId, setSentAttachmentsByMessageId] = useState<
@@ -187,7 +189,16 @@ export function PlaygroundRoute() {
 
   useEffect(() => {
     const selectedProject = projects.find((project) => project.id === selectedProjectId);
-    if (!selectedProject) return;
+    if (!selectedProject) {
+      pageDefaultProjectIdRef.current = "";
+      setPageNumber("1");
+      return;
+    }
+    if (pageDefaultProjectIdRef.current !== selectedProject.id) {
+      pageDefaultProjectIdRef.current = selectedProject.id;
+      setPageNumber(getDefaultPlaygroundPage(selectedProject));
+      return;
+    }
     const page = Number.parseInt(pageNumber, 10);
     if (!Number.isInteger(page) || page < 1) {
       setPageNumber("1");
