@@ -58,6 +58,7 @@ describe("TasksView", () => {
         isLoading={false}
         onOpenHome={vi.fn()}
         onOpenTasks={vi.fn()}
+        onOpenPlayground={vi.fn()}
         onOpenDocs={vi.fn()}
         onOpenSettings={vi.fn()}
         onOpenProject={onOpenProject}

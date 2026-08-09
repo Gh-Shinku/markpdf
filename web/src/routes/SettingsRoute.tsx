@@ -89,6 +89,7 @@ export function SettingsRoute() {
       onBack={() => navigate(from && from !== "/settings" ? from : "/")}
       onOpenHome={() => navigate("/")}
       onOpenTasks={() => navigate("/tasks")}
+      onOpenPlayground={() => navigate("/playground")}
       onOpenDocs={() => navigate("/docs")}
       onSave={() => saveMutation.mutate()}
       onTest={(id) => testMutation.mutate(id)}

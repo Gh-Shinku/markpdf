@@ -7,6 +7,7 @@ import usageMd from "../../../docs/USAGE.md?raw";
 type DocsViewProps = {
   onOpenHome: () => void;
   onOpenTasks: () => void;
+  onOpenPlayground: () => void;
   onOpenSettings: () => void;
 };
 
@@ -31,7 +32,12 @@ function flattenText(node: unknown): string {
 
 const HEADING_RE = /^(#{2,3})\s+(.+)$/gm;
 
-export function DocsView({ onOpenHome, onOpenTasks, onOpenSettings }: DocsViewProps) {
+export function DocsView({
+  onOpenHome,
+  onOpenTasks,
+  onOpenPlayground,
+  onOpenSettings,
+}: DocsViewProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const articleRef = useRef<HTMLElement | null>(null);
 
@@ -125,6 +131,7 @@ export function DocsView({ onOpenHome, onOpenTasks, onOpenSettings }: DocsViewPr
         active="docs"
         onHome={onOpenHome}
         onTasks={onOpenTasks}
+        onPlayground={onOpenPlayground}
         onDocs={() => undefined}
         onSettings={onOpenSettings}
       />

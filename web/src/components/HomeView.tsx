@@ -51,6 +51,7 @@ type HomeViewProps = {
   onDeleteProjects: (projectIds: string[]) => void;
   onSaveProjectGenerationSettings: (settings: ProjectGenerationSettings[]) => void;
   onOpenTasks: () => void;
+  onOpenPlayground: () => void;
   onOpenDocs: () => void;
   onOpenSettings: () => void;
 };
@@ -67,6 +68,7 @@ export function HomeView({
   onDeleteProjects,
   onSaveProjectGenerationSettings,
   onOpenTasks,
+  onOpenPlayground,
   onOpenDocs,
   onOpenSettings,
 }: HomeViewProps) {
@@ -194,6 +196,7 @@ export function HomeView({
         active="home"
         onHome={() => undefined}
         onTasks={onOpenTasks}
+        onPlayground={onOpenPlayground}
         onDocs={onOpenDocs}
         onSettings={onOpenSettings}
       />

@@ -24,6 +24,7 @@ type TasksViewProps = {
   error?: string;
   onOpenHome: () => void;
   onOpenTasks: () => void;
+  onOpenPlayground: () => void;
   onOpenDocs: () => void;
   onOpenSettings: () => void;
   onOpenProject: (projectId: string) => void;
@@ -62,6 +63,7 @@ export function TasksView({
   error,
   onOpenHome,
   onOpenTasks,
+  onOpenPlayground,
   onOpenDocs,
   onOpenSettings,
   onOpenProject,
@@ -87,6 +89,7 @@ export function TasksView({
         active="tasks"
         onHome={onOpenHome}
         onTasks={onOpenTasks}
+        onPlayground={onOpenPlayground}
         onDocs={onOpenDocs}
         onSettings={onOpenSettings}
       />

@@ -28,6 +28,7 @@ type SettingsViewProps = {
   onBack: () => void;
   onOpenHome: () => void;
   onOpenTasks: () => void;
+  onOpenPlayground: () => void;
   onOpenDocs: () => void;
   onSave: () => void;
   onTest: (providerId: string) => void;
@@ -48,6 +49,7 @@ export function SettingsView({
   onBack,
   onOpenHome,
   onOpenTasks,
+  onOpenPlayground,
   onOpenDocs,
   onSave,
   onTest,
@@ -98,6 +100,7 @@ export function SettingsView({
         active="settings"
         onHome={onOpenHome}
         onTasks={onOpenTasks}
+        onPlayground={onOpenPlayground}
         onDocs={onOpenDocs}
         onSettings={() => undefined}
       />

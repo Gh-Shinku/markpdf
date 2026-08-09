@@ -223,6 +223,7 @@ export function HomeRoute() {
           )
         }
         onOpenTasks={() => navigate("/tasks")}
+        onOpenPlayground={() => navigate("/playground")}
         onOpenDocs={() => navigate("/docs")}
         onOpenSettings={() => navigate("/settings", { state: { from: "/" } })}
       />

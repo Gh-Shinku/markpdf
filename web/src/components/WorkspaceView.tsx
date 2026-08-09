@@ -53,6 +53,7 @@ type WorkspaceViewProps = {
   maxSplitPercent: number;
   onReturnHome: () => void;
   onOpenTasks: () => void;
+  onOpenPlayground: () => void;
   onOpenDocs: () => void;
   onOpenSettings: () => void;
   onPageOffsetChange: (value: string) => void;
@@ -91,6 +92,7 @@ export function WorkspaceView({
   maxSplitPercent,
   onReturnHome,
   onOpenTasks,
+  onOpenPlayground,
   onOpenDocs,
   onOpenSettings,
   onPageOffsetChange,
@@ -179,6 +181,7 @@ export function WorkspaceView({
         active="workspace"
         onHome={onReturnHome}
         onTasks={onOpenTasks}
+        onPlayground={onOpenPlayground}
         onDocs={onOpenDocs}
         onSettings={onOpenSettings}
       />

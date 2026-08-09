@@ -8,13 +8,19 @@ from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import fitz
 
 from ..core import apply_toc_to_pdf, inject_toc_page_bookmark
 from ..services.generation_jobs import generation_job_store
 from ..services.projects import store
-from ..services.toc_extraction import DEFAULT_FLAT_PROMPT, extract_toc_json, request_toc_from_vlm
+from ..services.toc_extraction import (
+    DEFAULT_FLAT_PROMPT,
+    extract_toc_json,
+    render_pdf_page_image,
+    request_chat_from_vlm,
+    request_toc_from_vlm,
+)
 
 
 router = APIRouter(tags=["projects"])
@@ -22,6 +28,7 @@ generation_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="toc-
 
 
 MAX_PROMPT_LENGTH = 20000
+PLAYGROUND_DPI = 220
 
 
 class TocPayload(BaseModel):
@@ -79,6 +86,25 @@ class TocFileApplyPayload(BaseModel):
     page_offset: int = 0
 
 
+class PlaygroundAttachmentPayload(BaseModel):
+    type: str
+    project_id: str
+    page: int
+    dpi: int = PLAYGROUND_DPI
+    sha256: str
+
+
+class PlaygroundMessagePayload(BaseModel):
+    role: str
+    content: str
+    attachments: list[PlaygroundAttachmentPayload] = Field(default_factory=list)
+
+
+class PlaygroundChatPayload(BaseModel):
+    provider_id: str
+    messages: list[PlaygroundMessagePayload]
+
+
 def _project_or_404(project_id: str) -> dict[str, Any]:
     try:
         return store.get_project(project_id)
@@ -100,6 +126,49 @@ def _provider_or_400(provider_id: str) -> dict[str, Any]:
 
 def _provider_snapshot(provider: dict[str, Any]) -> dict[str, str]:
     return {key: str(provider.get(key) or "") for key in ("id", "name", "base_url", "model")}
+
+
+def _render_project_page_or_http(project_id: str, page: int) -> dict[str, Any]:
+    project = _project_or_404(project_id)
+    try:
+        rendered = render_pdf_page_image(store.pdf_path(project_id), page, PLAYGROUND_DPI)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "project_id": project["id"],
+        "page": page,
+        **rendered,
+    }
+
+
+def _playground_messages(payload: PlaygroundChatPayload) -> list[dict[str, Any]]:
+    if not payload.messages:
+        raise HTTPException(status_code=400, detail="At least one message is required")
+    converted: list[dict[str, Any]] = []
+    for message in payload.messages:
+        if message.role not in {"user", "assistant", "system"}:
+            raise HTTPException(status_code=400, detail="Unsupported playground message role")
+        if message.role == "assistant":
+            converted.append({"role": "assistant", "content": message.content})
+            continue
+
+        attachments = message.attachments if message.role == "user" else []
+        if not attachments:
+            converted.append({"role": message.role, "content": message.content})
+            continue
+
+        parts: list[dict[str, Any]] = [{"type": "text", "text": message.content}]
+        for attachment in attachments:
+            if attachment.type != "pdf_page":
+                raise HTTPException(status_code=400, detail="Unsupported playground attachment type")
+            if attachment.dpi != PLAYGROUND_DPI:
+                raise HTTPException(status_code=400, detail=f"Playground PDF pages must use {PLAYGROUND_DPI} DPI")
+            rendered = _render_project_page_or_http(attachment.project_id, attachment.page)
+            if str(rendered["sha256"]) != attachment.sha256:
+                raise HTTPException(status_code=409, detail="PDF page rendering changed; insert the page again")
+            parts.append({"type": "image_url", "image_url": {"url": rendered["data_url"]}})
+        converted.append({"role": message.role, "content": parts})
+    return converted
 
 
 def _validate_generation(project: dict[str, Any], payload: GeneratePayload) -> dict[str, Any]:
@@ -278,6 +347,11 @@ def get_project_pdf(project_id: str) -> FileResponse:
         filename=project.get("pdf_filename") or "source.pdf",
         content_disposition_type="inline",
     )
+
+
+@router.get("/projects/{project_id}/rendered-pages/{page}")
+def get_project_rendered_page(project_id: str, page: int) -> dict[str, Any]:
+    return _render_project_page_or_http(project_id, page)
 
 
 @router.get("/projects/{project_id}/toc")
@@ -621,3 +695,20 @@ def test_llm_provider(provider_id: str) -> dict[str, Any]:
     except Exception as exc:
         return {"provider": store.record_provider_verification(provider_id, "failed", str(exc))}
     return {"provider": store.record_provider_verification(provider_id, "verified", "Vision test passed")}
+
+
+@router.post("/playground/chat")
+def run_playground_chat(payload: PlaygroundChatPayload) -> dict[str, Any]:
+    provider = _provider_or_400(payload.provider_id)
+    try:
+        content = request_chat_from_vlm(
+            _playground_messages(payload),
+            api_key=str(provider["api_key"]),
+            base_url=str(provider["base_url"]),
+            model=str(provider["model"]),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"message": {"role": "assistant", "content": content}}

@@ -537,6 +537,110 @@ def test_apply_toc_file_persists_injected_toc_page(tmp_path, isolated_project_st
     assert [node["title"] for node in persisted_nodes] == ["Contents", "Chapter 1"]
 
 
+def test_rendered_page_api_returns_reproducible_backend_image(tmp_path) -> None:
+    project = _create_project(tmp_path, page_count=2)
+
+    response = client.get(f"/api/projects/{project['id']}/rendered-pages/1")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["project_id"] == project["id"]
+    assert data["page"] == 1
+    assert data["dpi"] == 220
+    assert data["mime_type"] == "image/png"
+    assert data["width"] > 0
+    assert data["height"] > 0
+    assert data["sha256"]
+    assert data["data_url"].startswith("data:image/png;base64,")
+
+
+def test_rendered_page_api_rejects_out_of_range_page(tmp_path) -> None:
+    project = _create_project(tmp_path, page_count=1)
+
+    response = client.get(f"/api/projects/{project['id']}/rendered-pages/2")
+
+    assert response.status_code == 400
+    assert "out of range" in response.json()["detail"]
+
+
+def test_playground_chat_sends_text_and_pdf_page_attachment(tmp_path, monkeypatch) -> None:
+    project = _create_project(tmp_path, page_count=1)
+    provider_id = _save_verified_provider()
+    rendered = client.get(f"/api/projects/{project['id']}/rendered-pages/1").json()
+    captured: dict[str, Any] = {}
+
+    def fake_request_chat_from_vlm(messages, api_key, base_url, model):
+        captured["messages"] = messages
+        captured["api_key"] = api_key
+        captured["base_url"] = base_url
+        captured["model"] = model
+        return "raw vlm response"
+
+    monkeypatch.setattr(projects_route, "request_chat_from_vlm", fake_request_chat_from_vlm)
+
+    response = client.post(
+        "/api/playground/chat",
+        json={
+            "provider_id": provider_id,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Extract this page.",
+                    "attachments": [
+                        {
+                            "type": "pdf_page",
+                            "project_id": project["id"],
+                            "page": 1,
+                            "dpi": 220,
+                            "sha256": rendered["sha256"],
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"]["content"] == "raw vlm response"
+    assert captured["api_key"] == "secret"
+    assert captured["base_url"] == "https://example.test/v1"
+    assert captured["model"] == "model-a"
+    assert captured["messages"][0]["role"] == "user"
+    assert captured["messages"][0]["content"][0] == {"type": "text", "text": "Extract this page."}
+    assert captured["messages"][0]["content"][1]["type"] == "image_url"
+    assert captured["messages"][0]["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_playground_chat_rejects_changed_rendered_page_hash(tmp_path) -> None:
+    project = _create_project(tmp_path, page_count=1)
+    provider_id = _save_verified_provider()
+
+    response = client.post(
+        "/api/playground/chat",
+        json={
+            "provider_id": provider_id,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Use this page.",
+                    "attachments": [
+                        {
+                            "type": "pdf_page",
+                            "project_id": project["id"],
+                            "page": 1,
+                            "dpi": 220,
+                            "sha256": "not-the-current-render",
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 409
+    assert "changed" in response.json()["detail"]
+
+
 def test_generate_toc_auto_apply_failure_marks_job_failed(tmp_path, monkeypatch) -> None:
     project = _create_project(tmp_path, page_count=4)
     provider_id = _save_verified_provider()

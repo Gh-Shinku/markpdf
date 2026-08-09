@@ -7,6 +7,7 @@ export function DocsRoute() {
     <DocsView
       onOpenHome={() => navigate("/")}
       onOpenTasks={() => navigate("/tasks")}
+      onOpenPlayground={() => navigate("/playground")}
       onOpenSettings={() => navigate("/settings")}
     />
   );

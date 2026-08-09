@@ -16,6 +16,8 @@ table-of-contents pages.
   back into the project PDF.
 - **AI generation** — scan the printed table-of-contents pages with a configured
   VLM provider and save the generated result as a TOC file.
+- **Prompt Playground** — test prompts against a selected VLM provider,
+  including backend-rendered PDF page images.
 - **Tasks** — monitor background generation jobs, including status, progress,
   failures, and generated-result actions.
 
@@ -31,6 +33,7 @@ table-of-contents pages.
    one port (`http://127.0.0.1:8000` by default), and opens the browser
    automatically. See `README.md` for launcher options such as `--port` and
    `--no-open`.
+
 2. Upload one or more PDFs from the **Projects** page.
 3. If you want AI generation, configure and test at least one
    OpenAI-compatible VLM API in **Settings**.
@@ -63,13 +66,13 @@ The **Projects** page is the main entry point for project-level operations.
 
 Each project stores the following metadata:
 
-| Metadata | Meaning |
-| --- | --- |
-| `page_offset` | Offset used to map a relative TOC page to a real PDF page. |
-| `toc_start` | First printed table-of-contents page, as a 1-based PDF page. |
-| `toc_end` | Last printed table-of-contents page, as a 1-based PDF page. |
-| `provider_id` | VLM provider used when this project is added to the generation queue. |
-| `inject_toc_page` | Whether Preview should prepend a bookmark pointing to the TOC page. |
+| Metadata          | Meaning                                                               |
+| ----------------- | --------------------------------------------------------------------- |
+| `page_offset`     | Offset used to map a relative TOC page to a real PDF page.            |
+| `toc_start`       | First printed table-of-contents page, as a 1-based PDF page.          |
+| `toc_end`         | Last printed table-of-contents page, as a 1-based PDF page.           |
+| `provider_id`     | VLM provider used when this project is added to the generation queue. |
+| `inject_toc_page` | Whether Preview should prepend a bookmark pointing to the TOC page.   |
 
 ### Page Offset and TOC Range
 
@@ -162,11 +165,11 @@ The page-scanning prompt is customizable in **Settings → Prompt** and supports
 up to 20,000 characters. The following placeholders are substituted before the
 request is sent:
 
-| Placeholder | Meaning |
-| --- | --- |
+| Placeholder   | Meaning                               |
+| ------------- | ------------------------------------- |
 | `{toc_start}` | First page of the TOC range, 1-based. |
-| `{toc_end}` | Last page of the TOC range, 1-based. |
-| `{pdf_name}` | PDF file name without extension. |
+| `{toc_end}`   | Last page of the TOC range, 1-based.  |
+| `{pdf_name}`  | PDF file name without extension.      |
 
 The default prompt asks the model to follow these rules:
 
@@ -185,8 +188,27 @@ The default prompt asks the model to follow these rules:
 The model must return a JSON array only:
 
 ```json
-[{"text": "Full Title String", "page": "12", "indent": 0}]
+[{ "text": "Full Title String", "page": "12", "indent": 0 }]
 ```
+
+## Prompt Playground
+
+Use **Playground** to iterate on extraction prompts without starting a full
+generation task.
+
+- Select a verified VLM API and a project PDF.
+- Insert a PDF page image by page number. The image is rendered by the backend
+  at 220 DPI through the same PyMuPDF path used by AI generation.
+- Click **Inject prompt into chat** to copy the current playground prompt into
+  the chat box, edit it if needed, then send. The server sends exactly the text
+  visible in the chat box.
+- Save the current playground prompt as the global page-scanning prompt.
+
+When a page image is sent, the server re-renders the same project page and
+checks its SHA-256 hash before forwarding the request. If the underlying PDF or
+rendering output changed, the request is rejected and the page should be
+inserted again. This keeps playground experiments reproducible with generation
+runs.
 
 ## Settings
 
@@ -204,12 +226,12 @@ The model must return a JSON array only:
 
 The TOC is a JSON array. Every node must be an object with this shape:
 
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `title` | string | Yes | Bookmark title. Blank titles are invalid. |
-| `page` | number \| `null` | Yes | Printed page number for `relative` entries, PDF page for `absolute` entries, or `null` for heading-only nodes. |
-| `attribute` | `"relative"` \| `"absolute"` | No | How `page` is interpreted. Defaults to `"relative"`. |
-| `children` | array | Yes | Nested child bookmarks. Use `[]` for leaf nodes. |
+| Field       | Type                         | Required | Description                                                                                                    |
+| ----------- | ---------------------------- | -------- | -------------------------------------------------------------------------------------------------------------- |
+| `title`     | string                       | Yes      | Bookmark title. Blank titles are invalid.                                                                      |
+| `page`      | number \| `null`             | Yes      | Printed page number for `relative` entries, PDF page for `absolute` entries, or `null` for heading-only nodes. |
+| `attribute` | `"relative"` \| `"absolute"` | No       | How `page` is interpreted. Defaults to `"relative"`.                                                           |
+| `children`  | array                        | Yes      | Nested child bookmarks. Use `[]` for leaf nodes.                                                               |
 
 Page resolution rules:
 

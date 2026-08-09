@@ -20,7 +20,14 @@ vi.stubGlobal(
 afterEach(cleanup);
 
 function renderDocs() {
-  return render(<DocsView onOpenHome={vi.fn()} onOpenTasks={vi.fn()} onOpenSettings={vi.fn()} />);
+  return render(
+    <DocsView
+      onOpenHome={vi.fn()}
+      onOpenTasks={vi.fn()}
+      onOpenPlayground={vi.fn()}
+      onOpenSettings={vi.fn()}
+    />,
+  );
 }
 
 describe("DocsView", () => {

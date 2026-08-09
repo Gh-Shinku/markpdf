@@ -390,6 +390,7 @@ export function WorkspaceRoute() {
         maxSplitPercent={MAX_SPLIT_PERCENT}
         onReturnHome={() => navigate("/")}
         onOpenTasks={() => navigate("/tasks")}
+        onOpenPlayground={() => navigate("/playground")}
         onOpenDocs={() => navigate("/docs")}
         onOpenSettings={() => navigate("/settings", { state: { from: `/projects/${projectId}` } })}
         onPageOffsetChange={setPageOffset}

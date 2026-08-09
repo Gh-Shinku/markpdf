@@ -38,6 +38,7 @@ export function TasksRoute() {
       error={jobsQuery.error?.message}
       onOpenHome={() => navigate("/")}
       onOpenTasks={() => undefined}
+      onOpenPlayground={() => navigate("/playground")}
       onOpenDocs={() => navigate("/docs")}
       onOpenSettings={() => navigate("/settings", { state: { from: "/tasks" } })}
       onOpenProject={(projectId) => navigate(`/projects/${encodeURIComponent(projectId)}`)}

@@ -1,15 +1,23 @@
-import { BookMarked, BookOpen, FolderOpen, ListChecks, Settings } from "lucide-react";
+import { BookMarked, BookOpen, FlaskConical, FolderOpen, ListChecks, Settings } from "lucide-react";
 import styles from "./AppNavigation.module.css";
 
 type AppNavigationProps = {
-  active: "home" | "settings" | "tasks" | "workspace" | "docs";
+  active: "home" | "settings" | "tasks" | "workspace" | "docs" | "playground";
   onHome: () => void;
   onTasks: () => void;
+  onPlayground: () => void;
   onDocs: () => void;
   onSettings: () => void;
 };
 
-export function AppNavigation({ active, onHome, onTasks, onDocs, onSettings }: AppNavigationProps) {
+export function AppNavigation({
+  active,
+  onHome,
+  onTasks,
+  onPlayground,
+  onDocs,
+  onSettings,
+}: AppNavigationProps) {
   return (
     <aside className={styles.navigation} aria-label="Application navigation">
       <button className={styles.mark} type="button" aria-label="All projects" onClick={onHome}>
@@ -35,6 +43,16 @@ export function AppNavigation({ active, onHome, onTasks, onDocs, onSettings }: A
         >
           <ListChecks size={18} aria-hidden="true" />
           <span>Tasks</span>
+        </button>
+        <button
+          className={`${styles.action}${active === "playground" ? ` ${styles.active}` : ""}`}
+          type="button"
+          aria-current={active === "playground" ? "page" : undefined}
+          onClick={onPlayground}
+          title="Playground"
+        >
+          <FlaskConical size={18} aria-hidden="true" />
+          <span>Playground</span>
         </button>
         <button
           className={`${styles.action}${active === "docs" ? ` ${styles.active}` : ""}`}
