@@ -66,6 +66,32 @@ def test_create_list_and_read_project_toc(tmp_path, isolated_project_store) -> N
     assert [path.name for path in isolated_project_store.pdf_path(project["id"]).parent.glob("*.pdf")] == ["document.pdf"]
 
 
+def test_create_project_with_invalid_toc_does_not_leave_partial_project(tmp_path, isolated_project_store) -> None:
+    input_pdf = tmp_path / "input.pdf"
+    _make_pdf(input_pdf)
+
+    response = client.post(
+        "/api/projects",
+        files={
+            "pdf": ("input.pdf", input_pdf.read_bytes(), "application/pdf"),
+            "toc_json": ("toc.json", b'{"not": "a toc array"}', "application/json"),
+        },
+    )
+
+    assert response.status_code == 400
+    assert not list(isolated_project_store.projects_dir.glob("*/project.json"))
+
+
+def test_project_ids_reject_unsafe_path_segments(tmp_path, isolated_project_store) -> None:
+    project = _create_project(tmp_path, page_count=1)
+
+    response = client.get("/api/projects/bad.id")
+
+    assert response.status_code == 404
+    assert isolated_project_store.get_project(project["id"])["id"] == project["id"]
+    assert not (isolated_project_store.root / "bad.id").exists()
+
+
 def test_project_validate_and_apply(tmp_path, isolated_project_store) -> None:
     project = _create_project(tmp_path, page_count=4)
     toc_text = json.dumps(
@@ -251,6 +277,18 @@ def test_llm_settings_are_saved_and_redacted() -> None:
     assert settings["model"] == "model-a"
     assert "api_key" not in settings
     assert settings["api_key_hint"] == "sk-1...7890"
+
+
+def test_provider_save_returns_public_records_without_private_helper() -> None:
+    response = client.put(
+        "/api/settings/providers",
+        json={"providers": [{"name": "Public", "base_url": "https://example.test/v1", "model": "model-a", "api_key": "secret"}]},
+    )
+
+    assert response.status_code == 200
+    provider = response.json()["providers"][0]
+    assert "api_key" not in provider
+    assert provider["has_api_key"] is True
 
 
 def _save_verified_provider() -> str:
@@ -937,6 +975,17 @@ def test_playground_chat_session_rename_rejects_empty_title() -> None:
 
     assert response.status_code == 400
     assert "required" in response.json()["detail"]
+
+
+def test_playground_chat_ids_reject_unsafe_path_segments() -> None:
+    provider_id = _save_verified_provider()
+    create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
+    assert create_response.status_code == 200
+
+    response = client.get("/api/playground/chats/bad.id")
+
+    assert response.status_code == 404
+    assert create_response.json()["chat"]["id"] in [item["id"] for item in client.get("/api/playground/chats").json()["chats"]]
 
 
 def test_playground_chat_session_stores_pdf_page_attachment(tmp_path, monkeypatch) -> None:

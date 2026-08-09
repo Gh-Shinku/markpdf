@@ -40,7 +40,7 @@ def save_llm_providers(payload: ProvidersPayload) -> dict[str, Any]:
         providers = runtime.store.save_llm_providers([item.model_dump(exclude_none=True) for item in payload.providers])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"providers": [runtime.store._public_provider(item) for item in providers]}
+    return {"providers": [runtime.store.public_provider(item) for item in providers]}
 
 
 @router.get("/settings/prompts")

@@ -13,6 +13,7 @@ import fitz
 from openai import OpenAI
 
 from ..core import validate_toc_json_structure
+from .storage import write_json_atomic
 
 
 DEFAULT_FLAT_PROMPT = (
@@ -973,10 +974,7 @@ def extract_toc_json(
                         validated_page_items = extractor._validate_flat_list(raw_json)
                     except Exception:
                         continue
-                    (work_dir / f"page_{page_no}.json").write_text(
-                        json.dumps(validated_page_items, ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
+                    write_json_atomic(work_dir / f"page_{page_no}.json", validated_page_items)
 
             existing_page_files = list(work_dir.glob("page_*.json"))
 
@@ -1065,10 +1063,7 @@ def extract_toc_json(
                         api_elapsed,
                     )
 
-                page_cache_file.write_text(
-                    json.dumps(page_flat_items, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
+                write_json_atomic(page_cache_file, page_flat_items)
 
                 if on_flat_page_event is not None:
                     on_flat_page_event(
@@ -1118,38 +1113,30 @@ def extract_toc_json(
         corrected = pruned_rebuilt
         stats["level_correction"] = "failed"
 
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(
-        json.dumps(corrected, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    write_json_atomic(cache_file, corrected)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     raw_cache_file = cache_dir / f"flat_raw_{timestamp}.json"
-    raw_cache_file.write_text(
-        json.dumps(
-            {
-                "mode": "flat",
-                "input_pdf": str(input_pdf),
-                "toc_start": toc_start,
-                "toc_end": toc_end,
-                "model": model,
-                "dpi": dpi,
-                "prompt": rendered_prompt,
-                "request_profile": request_profile,
-                "work_dir": str(work_dir),
-                "pages": [
-                    {
-                        "page_call_index": i,
-                        "raw_json": page_items_collected[i - 1],
-                    }
-                    for i in range(1, total_pages + 1)
-                ],
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
+    write_json_atomic(
+        raw_cache_file,
+        {
+            "mode": "flat",
+            "input_pdf": str(input_pdf),
+            "toc_start": toc_start,
+            "toc_end": toc_end,
+            "model": model,
+            "dpi": dpi,
+            "prompt": rendered_prompt,
+            "request_profile": request_profile,
+            "work_dir": str(work_dir),
+            "pages": [
+                {
+                    "page_call_index": i,
+                    "raw_json": page_items_collected[i - 1],
+                }
+                for i in range(1, total_pages + 1)
+            ],
+        },
     )
 
     loaded_from_cache = not vlm_called

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from .projects import default_data_dir, utc_now_iso
+from .storage import read_json_object, safe_id, write_json_atomic
 
 
 JOB_STATUS_QUEUED = "queued"
@@ -66,7 +66,7 @@ class GenerationJobStore:
         path = self._job_path(job_id)
         if not path.exists():
             raise KeyError(job_id)
-        return self._normalize_job(json.loads(path.read_text(encoding="utf-8")))
+        return self._normalize_job(read_json_object(path))
 
     def mark_running(self, job_id: str, message: str) -> dict[str, Any]:
         job = self.get_job(job_id)
@@ -155,8 +155,8 @@ class GenerationJobStore:
         jobs: list[dict[str, Any]] = []
         for path in self.jobs_dir.glob("*.json"):
             try:
-                job = self._normalize_job(json.loads(path.read_text(encoding="utf-8")))
-            except (OSError, json.JSONDecodeError):
+                job = self._normalize_job(read_json_object(path))
+            except (OSError, json.JSONDecodeError, ValueError):
                 continue
             if status is None or job.get("status") == status:
                 jobs.append(job)
@@ -175,8 +175,8 @@ class GenerationJobStore:
         recovered = 0
         for path in self.jobs_dir.glob("*.json"):
             try:
-                job = self._normalize_job(json.loads(path.read_text(encoding="utf-8")))
-            except (OSError, json.JSONDecodeError):
+                job = self._normalize_job(read_json_object(path))
+            except (OSError, json.JSONDecodeError, ValueError):
                 continue
             if job.get("status") not in ACTIVE_JOB_STATUSES:
                 continue
@@ -191,12 +191,10 @@ class GenerationJobStore:
     def write_job(self, job: dict[str, Any]) -> None:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         path = self._job_path(str(job["id"]))
-        temporary_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-        temporary_path.write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(temporary_path, path)
+        write_json_atomic(path, job)
 
     def _job_path(self, job_id: str) -> Path:
-        return self.jobs_dir / f"{job_id}.json"
+        return self.jobs_dir / f"{safe_id(job_id, 'job_id')}.json"
 
     def _normalize_job(self, job: dict[str, Any]) -> dict[str, Any]:
         total_pages = max(0, int(job.get("toc_end", 0)) - int(job.get("toc_start", 0)) + 1)

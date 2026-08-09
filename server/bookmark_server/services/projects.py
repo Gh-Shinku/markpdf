@@ -1,40 +1,23 @@
 from __future__ import annotations
 
 import json
-import os
-import shutil
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
-
-import fitz
 
 from ..core import flatten_to_pymupdf_toc, parse_toc_items, validate_toc_json_structure
-from .toc_extraction import DEFAULT_FLAT_PROMPT
-
-
-DEFAULT_TOC = [
-    {
-        "title": "Contents",
-        "page": 1,
-        "attribute": "absolute",
-        "children": [],
-    }
-]
-
-DOCUMENT_FILENAME = "document.pdf"
-LEGACY_SOURCE_FILENAME = "source.pdf"
-LEGACY_OUTPUT_FILENAME = "output.pdf"
-
-
-def utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def default_data_dir() -> Path:
-    return Path(os.getenv("BOOKMARK_WORKSPACE_DATA", "workspace_data"))
+from .playground_repository import PlaygroundRepository
+from .project_repository import ProjectRepository
+from .projects_common import (
+    DEFAULT_TOC,
+    DOCUMENT_FILENAME,
+    LEGACY_OUTPUT_FILENAME,
+    LEGACY_SOURCE_FILENAME,
+    default_data_dir,
+    utc_now_iso,
+)
+from .settings_repository import SettingsRepository
+from .toc_file_repository import TocFileRepository
 
 
 @dataclass(frozen=True)
@@ -59,26 +42,26 @@ class ValidationResult:
 
 
 class ProjectStore:
+    """Compatibility facade over focused file-backed repositories."""
+
     def __init__(self, root: Path | None = None) -> None:
         self.root = root or default_data_dir()
-        self.projects_dir = self.root / "projects"
-        self.settings_file = self.root / "settings.json"
-        self.playground_dir = self.root / "playground"
-        self.playground_chats_dir = self.playground_dir / "chats"
-        self.playground_index_file = self.playground_dir / "index.json"
+        self.projects = ProjectRepository(self.root)
+        self.settings = SettingsRepository(self.root)
+        self.toc_files = TocFileRepository(self.root, self.projects)
+        self.playground = PlaygroundRepository(self.root)
+
+        self.projects_dir = self.projects.projects_dir
+        self.settings_file = self.settings.settings_file
+        self.playground_dir = self.playground.playground_dir
+        self.playground_chats_dir = self.playground.playground_chats_dir
+        self.playground_index_file = self.playground.playground_index_file
 
     def ensure_root(self) -> None:
-        self.projects_dir.mkdir(parents=True, exist_ok=True)
+        self.projects.ensure_root()
 
     def list_projects(self) -> list[dict[str, Any]]:
-        self.ensure_root()
-        projects: list[dict[str, Any]] = []
-        for metadata_file in self.projects_dir.glob("*/project.json"):
-            try:
-                projects.append(self._normalize_metadata(json.loads(metadata_file.read_text(encoding="utf-8"))))
-            except (OSError, json.JSONDecodeError):
-                continue
-        return sorted(projects, key=lambda item: item.get("updated_at", ""), reverse=True)
+        return self.projects.list_projects()
 
     def create_project(
         self,
@@ -88,66 +71,19 @@ class ProjectStore:
         toc_filename: str | None = None,
         page_offset: int = 0,
     ) -> dict[str, Any]:
-        self.ensure_root()
-        project_id = uuid4().hex
-        project_dir = self.projects_dir / project_id
-        project_dir.mkdir(parents=True, exist_ok=False)
-
-        document_path = project_dir / DOCUMENT_FILENAME
-        document_path.write_bytes(pdf_bytes)
-        toc_text = self._initial_toc_text(toc_bytes)
-        (project_dir / "toc.json").write_text(toc_text, encoding="utf-8")
-
-        page_count = self._pdf_page_count(document_path)
-        now = utc_now_iso()
-        metadata = {
-            "id": project_id,
-            "name": Path(pdf_filename).stem or "Untitled PDF",
-            "pdf_filename": pdf_filename or "source.pdf",
-            "toc_filename": toc_filename,
-            "page_offset": page_offset,
-            "toc_start": 1,
-            "toc_end": page_count,
-            "inject_toc_page": True,
-            "provider_id": None,
-            "page_count": page_count,
-            "created_at": now,
-            "updated_at": now,
-            "toc_updated_at": now,
-            "generated_at": None,
-            "last_validation": None,
-        }
-        self._write_metadata(project_id, metadata)
-        return metadata
+        return self.projects.create_project(pdf_filename, pdf_bytes, toc_bytes, toc_filename, page_offset)
 
     def get_project(self, project_id: str) -> dict[str, Any]:
-        metadata_file = self._project_dir(project_id) / "project.json"
-        if not metadata_file.exists():
-            raise KeyError(project_id)
-        return self._normalize_metadata(json.loads(metadata_file.read_text(encoding="utf-8")))
+        return self.projects.get_project(project_id)
 
     def delete_project(self, project_id: str) -> None:
-        project_dir = self._project_dir(project_id)
-        if not project_dir.exists():
-            raise KeyError(project_id)
-        shutil.rmtree(project_dir)
+        self.projects.delete_project(project_id)
 
     def read_toc_text(self, project_id: str) -> str:
-        toc_file = self.toc_path(project_id)
-        if not toc_file.exists():
-            raise KeyError(project_id)
-        return toc_file.read_text(encoding="utf-8")
+        return self.projects.read_toc_text(project_id)
 
     def save_toc_text(self, project_id: str, toc_text: str, generated: bool = False) -> dict[str, Any]:
-        metadata = self.get_project(project_id)
-        self.toc_path(project_id).write_text(toc_text, encoding="utf-8")
-        now = utc_now_iso()
-        metadata["updated_at"] = now
-        metadata["toc_updated_at"] = now
-        if generated:
-            metadata["generated_at"] = now
-        self._write_metadata(project_id, metadata)
-        return metadata
+        return self.projects.save_toc_text(project_id, toc_text, generated)
 
     def update_project_metadata(
         self,
@@ -160,66 +96,24 @@ class ProjectStore:
         provider_id_set: bool = False,
         inject_toc_page: bool | None = None,
     ) -> dict[str, Any]:
-        metadata = self.get_project(project_id)
-        if page_offset is not None:
-            metadata["page_offset"] = page_offset
-        if toc_start is not None:
-            metadata["toc_start"] = toc_start
-        if toc_end is not None:
-            metadata["toc_end"] = toc_end
-        if provider_id_set:
-            metadata["provider_id"] = provider_id
-        if inject_toc_page is not None:
-            metadata["inject_toc_page"] = inject_toc_page
-        metadata["updated_at"] = utc_now_iso()
-        self._write_metadata(project_id, metadata)
-        return metadata
+        return self.projects.update_project_metadata(
+            project_id,
+            page_offset=page_offset,
+            toc_start=toc_start,
+            toc_end=toc_end,
+            provider_id=provider_id,
+            provider_id_set=provider_id_set,
+            inject_toc_page=inject_toc_page,
+        )
 
-    def record_validation(
-        self,
-        project_id: str,
-        validation: ValidationResult,
-        page_offset: int,
-    ) -> dict[str, Any]:
-        metadata = self.get_project(project_id)
-        metadata["page_offset"] = page_offset
-        metadata["updated_at"] = utc_now_iso()
-        metadata["last_validation"] = {
-            "valid": validation.valid,
-            "bookmark_count": validation.bookmark_count,
-            "checked_at": utc_now_iso(),
-            "issues": [{"message": issue.message} for issue in validation.issues],
-        }
-        self._write_metadata(project_id, metadata)
-        return metadata
+    def record_validation(self, project_id: str, validation: ValidationResult, page_offset: int) -> dict[str, Any]:
+        return self.projects.record_validation(project_id, validation, page_offset)
 
     def pdf_path(self, project_id: str) -> Path:
-        project_dir = self._project_dir(project_id)
-        document_path = project_dir / DOCUMENT_FILENAME
-        legacy_paths = [
-            project_dir / LEGACY_SOURCE_FILENAME,
-            project_dir / LEGACY_OUTPUT_FILENAME,
-        ]
-
-        if document_path.exists():
-            for legacy_path in legacy_paths:
-                legacy_path.unlink(missing_ok=True)
-            return document_path
-
-        legacy_document = next(
-            (path for path in reversed(legacy_paths) if path.exists()),
-            None,
-        )
-        if legacy_document is None:
-            raise KeyError(project_id)
-
-        legacy_document.replace(document_path)
-        for legacy_path in legacy_paths:
-            legacy_path.unlink(missing_ok=True)
-        return document_path
+        return self.projects.pdf_path(project_id)
 
     def toc_path(self, project_id: str) -> Path:
-        return self._project_dir(project_id) / "toc.json"
+        return self.projects.toc_path(project_id)
 
     def cache_dir(self) -> Path:
         path = self.root / "cache"
@@ -227,63 +121,19 @@ class ProjectStore:
         return path
 
     def list_playground_chats(self) -> dict[str, Any]:
-        self._ensure_playground_root()
-        chats: list[dict[str, Any]] = []
-        for chat_file in self.playground_chats_dir.glob("*/chat.json"):
-            try:
-                chat = self._normalize_playground_chat(json.loads(chat_file.read_text(encoding="utf-8")))
-            except (OSError, json.JSONDecodeError, ValueError):
-                continue
-            chats.append(self._playground_chat_summary(chat))
-        chats = sorted(chats, key=lambda item: item.get("updated_at", ""), reverse=True)
-        index = self._read_playground_index()
-        active_chat_id = index.get("active_chat_id")
-        if active_chat_id and not any(item["id"] == active_chat_id for item in chats):
-            active_chat_id = None
-        if active_chat_id is None and chats:
-            active_chat_id = str(chats[0]["id"])
-        return {"chats": chats, "active_chat_id": active_chat_id}
+        return self.playground.list_playground_chats()
 
-    def create_playground_chat(
-        self,
-        provider_id: str | None = None,
-        thinking_mode: str | None = None,
-    ) -> dict[str, Any]:
-        self._ensure_playground_root()
-        chat_id = uuid4().hex
-        now = utc_now_iso()
-        chat = {
-            "id": chat_id,
-            "title": "New chat",
-            "provider_id": provider_id,
-            "thinking_mode": thinking_mode if thinking_mode in {"auto", "on", "off"} else "auto",
-            "created_at": now,
-            "updated_at": now,
-            "messages": [],
-        }
-        self._write_playground_chat(chat)
-        self.set_active_playground_chat(chat_id)
-        return chat
+    def create_playground_chat(self, provider_id: str | None = None, thinking_mode: str | None = None) -> dict[str, Any]:
+        return self.playground.create_playground_chat(provider_id, thinking_mode)
 
     def get_playground_chat(self, chat_id: str) -> dict[str, Any]:
-        chat_file = self._playground_chat_file(chat_id)
-        if not chat_file.exists():
-            raise KeyError(chat_id)
-        return self._normalize_playground_chat(json.loads(chat_file.read_text(encoding="utf-8")))
+        return self.playground.get_playground_chat(chat_id)
 
     def set_active_playground_chat(self, chat_id: str) -> dict[str, Any]:
-        self.get_playground_chat(chat_id)
-        index = self._read_playground_index()
-        index["active_chat_id"] = chat_id
-        self._write_playground_index(index)
-        return self.list_playground_chats()
+        return self.playground.set_active_playground_chat(chat_id)
 
     def rename_playground_chat(self, chat_id: str, title: str) -> dict[str, Any]:
-        chat = self.get_playground_chat(chat_id)
-        chat["title"] = title
-        chat["updated_at"] = utc_now_iso()
-        self._write_playground_chat(chat)
-        return chat
+        return self.playground.rename_playground_chat(chat_id, title)
 
     def update_playground_chat_settings(
         self,
@@ -292,25 +142,10 @@ class ProjectStore:
         provider_id: str | None = None,
         thinking_mode: str | None = None,
     ) -> dict[str, Any]:
-        chat = self.get_playground_chat(chat_id)
-        if provider_id is not None:
-            chat["provider_id"] = provider_id
-        if thinking_mode in {"auto", "on", "off"}:
-            chat["thinking_mode"] = thinking_mode
-        chat["updated_at"] = utc_now_iso()
-        self._write_playground_chat(chat)
-        return chat
+        return self.playground.update_playground_chat_settings(chat_id, provider_id=provider_id, thinking_mode=thinking_mode)
 
     def delete_playground_chat(self, chat_id: str) -> dict[str, Any]:
-        chat_dir = self._playground_chat_dir(chat_id)
-        if not chat_dir.exists():
-            raise KeyError(chat_id)
-        shutil.rmtree(chat_dir)
-        index = self._read_playground_index()
-        if index.get("active_chat_id") == chat_id:
-            index["active_chat_id"] = None
-            self._write_playground_index(index)
-        return self.list_playground_chats()
+        return self.playground.delete_playground_chat(chat_id)
 
     def append_playground_exchange(
         self,
@@ -320,44 +155,13 @@ class ProjectStore:
         user_message: dict[str, Any],
         assistant_message: dict[str, Any],
     ) -> dict[str, Any]:
-        chat = self.get_playground_chat(chat_id)
-        now = utc_now_iso()
-        chat["provider_id"] = provider_id
-        chat["thinking_mode"] = thinking_mode if thinking_mode in {"auto", "on", "off"} else "auto"
-        chat["updated_at"] = now
-        if str(chat.get("title") or "") == "New chat":
-            title = str(user_message.get("content") or "").strip().splitlines()[0][:48]
-            if title:
-                chat["title"] = title
-        chat_messages = chat.setdefault("messages", [])
-        chat_messages.append(user_message)
-        chat_messages.append(assistant_message)
-        self._write_playground_chat(chat)
-        self.set_active_playground_chat(chat_id)
-        return chat
+        return self.playground.append_playground_exchange(chat_id, provider_id, thinking_mode, user_message, assistant_message)
 
     def save_playground_attachment(self, chat_id: str, attachment_id: str, data_url: str) -> str:
-        prefix = "data:image/png;base64,"
-        if not data_url.startswith(prefix):
-            raise ValueError("Playground attachment must be a PNG data URL")
-        safe_attachment_id = self._safe_playground_id(attachment_id)
-        attachment_dir = self._playground_chat_dir(chat_id) / "attachments"
-        attachment_dir.mkdir(parents=True, exist_ok=True)
-        image_path = attachment_dir / f"{safe_attachment_id}.png"
-        import base64
-
-        image_path.write_bytes(base64.b64decode(data_url[len(prefix) :]))
-        return f"/api/playground/chats/{chat_id}/attachments/{safe_attachment_id}.png"
+        return self.playground.save_playground_attachment(chat_id, attachment_id, data_url)
 
     def playground_attachment_path(self, chat_id: str, attachment_filename: str) -> Path:
-        if not attachment_filename.endswith(".png"):
-            raise KeyError(attachment_filename)
-        attachment_id = attachment_filename[:-4]
-        safe_attachment_id = self._safe_playground_id(attachment_id)
-        path = self._playground_chat_dir(chat_id) / "attachments" / f"{safe_attachment_id}.png"
-        if not path.exists():
-            raise KeyError(attachment_filename)
-        return path
+        return self.playground.playground_attachment_path(chat_id, attachment_filename)
 
     def validate_toc(self, project_id: str, toc_text: str, page_offset: int) -> ValidationResult:
         pdf_path = self.pdf_path(project_id)
@@ -368,368 +172,59 @@ class ProjectStore:
             raw_data = json.loads(toc_text)
             normalized = validate_toc_json_structure(raw_data)
             items = parse_toc_items(normalized)
-            page_count = self._pdf_page_count(pdf_path)
-            flattened = flatten_to_pymupdf_toc(
-                items=items,
-                page_offset=page_offset,
-                pdf_page_count=page_count,
-            )
+            page_count = self.projects.pdf_page_count(pdf_path)
+            flattened = flatten_to_pymupdf_toc(items=items, page_offset=page_offset, pdf_page_count=page_count)
         except json.JSONDecodeError as exc:
-            return ValidationResult(
-                valid=False,
-                issues=[ValidationIssue(f"JSON syntax error: {exc.msg} at line {exc.lineno}")],
-            )
+            return ValidationResult(valid=False, issues=[ValidationIssue(f"JSON syntax error: {exc.msg} at line {exc.lineno}")])
         except ValueError as exc:
             return ValidationResult(valid=False, issues=[ValidationIssue(str(exc))])
 
-        return ValidationResult(
-            valid=True,
-            issues=[],
-            normalized_toc=normalized,
-            bookmark_count=len(flattened),
-        )
+        return ValidationResult(valid=True, issues=[], normalized_toc=normalized, bookmark_count=len(flattened))
 
     def read_llm_settings(self) -> dict[str, Any]:
-        providers = self.read_llm_providers()
-        return providers[0] if providers else {"base_url": "", "model": "", "api_key": ""}
+        return self.settings.read_llm_settings()
 
     def read_llm_providers(self) -> list[dict[str, Any]]:
-        if not self.settings_file.exists():
-            return [self._provider_record("default", "Qwen VL", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3-vl-flash", "")]
-        raw = json.loads(self.settings_file.read_text(encoding="utf-8"))
-        if isinstance(raw.get("providers"), list):
-            return [self._normalize_provider(item, index) for index, item in enumerate(raw["providers"]) if isinstance(item, dict)]
-        # Migrate the legacy single-provider file without changing its credential.
-        return [self._provider_record("default", str(raw.get("model") or "Default VLM"), str(raw.get("base_url") or ""), str(raw.get("model") or ""), str(raw.get("api_key") or ""))]
-
-    def _read_settings(self) -> dict[str, Any]:
-        if not self.settings_file.exists():
-            return {}
-        try:
-            raw = json.loads(self.settings_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {}
-        return raw if isinstance(raw, dict) else {}
-
-    def _write_settings(self, raw: dict[str, Any]) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
-        self.settings_file.write_text(
-            json.dumps(raw, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        return self.settings.read_llm_providers()
 
     def save_llm_providers(self, providers: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        self.root.mkdir(parents=True, exist_ok=True)
-        existing = {str(item["id"]): item for item in self.read_llm_providers()}
-        normalized: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        for index, item in enumerate(providers):
-            provider_id = str(item.get("id") or uuid4().hex)
-            if provider_id in seen:
-                raise ValueError("Provider IDs must be unique")
-            seen.add(provider_id)
-            previous = existing.get(provider_id)
-            api_key_value = item.get("api_key")
-            api_key = str(previous.get("api_key") or "") if api_key_value in {None, ""} and previous else str(api_key_value or "")
-            provider = self._provider_record(
-                provider_id,
-                str(item.get("name") or item.get("model") or f"VLM API {index + 1}").strip(),
-                str(item.get("base_url") or "").strip(),
-                str(item.get("model") or "").strip(),
-                api_key,
-                sampling=item.get("sampling") if isinstance(item.get("sampling"), dict) else None,
-                thinking_mode=str(item.get("thinking_mode") or "auto"),
-                extra_body=item.get("extra_body") if isinstance(item.get("extra_body"), dict) else None,
-            )
-            if previous and self._provider_connection(previous) == self._provider_connection(provider):
-                provider.update({key: previous.get(key) for key in ("verification_status", "verification_message", "verified_at")})
-            normalized.append(provider)
-        raw = self._read_settings()
-        raw["providers"] = normalized
-        self._write_settings(raw)
-        return normalized
+        return self.settings.save_llm_providers(providers)
 
     def save_llm_settings(self, settings: dict[str, Any]) -> dict[str, Any]:
-        provider = self.read_llm_providers()[0]
-        provider.update(settings)
-        return self.save_llm_providers([provider])[0]
+        return self.settings.save_llm_settings(settings)
 
     def public_llm_settings(self) -> dict[str, Any]:
-        settings = self.read_llm_settings()
-        api_key = str(settings.get("api_key") or "")
-        return {
-            "base_url": settings.get("base_url") or "",
-            "model": settings.get("model") or "",
-            "has_api_key": bool(api_key),
-            "api_key_hint": self._api_key_hint(api_key),
-        }
+        return self.settings.public_llm_settings()
 
     def public_llm_providers(self) -> list[dict[str, Any]]:
-        return [self._public_provider(item) for item in self.read_llm_providers()]
+        return self.settings.public_llm_providers()
+
+    def public_provider(self, provider: dict[str, Any]) -> dict[str, Any]:
+        return self.settings.public_provider(provider)
 
     def get_llm_provider(self, provider_id: str) -> dict[str, Any]:
-        provider = next((item for item in self.read_llm_providers() if item["id"] == provider_id), None)
-        if provider is None:
-            raise KeyError(provider_id)
-        return provider
+        return self.settings.get_llm_provider(provider_id)
 
     def read_toc_prompt(self) -> str:
-        """Return the effective ToC prompt (stored override or built-in default)."""
-        settings = self._read_settings()
-        value = settings.get("prompt")
-        if not isinstance(value, str) or not value.strip():
-            # Migrate the legacy {prompts: {flat, tree}} layout.
-            legacy = settings.get("prompts")
-            if isinstance(legacy, dict):
-                value = legacy.get("flat")
-        if not isinstance(value, str) or not value.strip():
-            return DEFAULT_FLAT_PROMPT
-        return value
+        return self.settings.read_toc_prompt()
 
     def save_toc_prompt(self, prompt: str) -> str:
-        """Persist the ToC prompt override, preserving the providers key."""
-        raw = self._read_settings()
-        raw["prompt"] = prompt.strip()
-        if "prompts" in raw:
-            del raw["prompts"]
-        self._write_settings(raw)
-        return self.read_toc_prompt()
+        return self.settings.save_toc_prompt(prompt)
 
     def record_provider_verification(self, provider_id: str, status: str, message: str) -> dict[str, Any]:
-        providers = self.read_llm_providers()
-        provider = next((item for item in providers if item["id"] == provider_id), None)
-        if provider is None:
-            raise KeyError(provider_id)
-        provider["verification_status"] = status
-        provider["verification_message"] = message
-        provider["verified_at"] = utc_now_iso()
-        raw = self._read_settings()
-        raw["providers"] = providers
-        self._write_settings(raw)
-        return self._public_provider(provider)
+        return self.settings.record_provider_verification(provider_id, status, message)
 
     def list_toc_files(self, project_id: str) -> list[dict[str, Any]]:
-        metadata = self.get_project(project_id)
-        records = metadata.get("toc_files")
-        if not isinstance(records, list):
-            return [{"id": "main", "name": "toc.json", "kind": "manual", "created_at": metadata.get("toc_updated_at"), "updated_at": metadata.get("toc_updated_at"), "source_job_id": None}]
-        return records
+        return self.toc_files.list_toc_files(project_id)
 
     def read_toc_file(self, project_id: str, toc_file_id: str) -> str:
-        return self._toc_file_path(project_id, toc_file_id).read_text(encoding="utf-8")
+        return self.toc_files.read_toc_file(project_id, toc_file_id)
 
     def save_toc_file(self, project_id: str, toc_file_id: str, toc_text: str) -> dict[str, Any]:
-        path = self._toc_file_path(project_id, toc_file_id)
-        path.write_text(toc_text, encoding="utf-8")
-        metadata = self.get_project(project_id)
-        now = utc_now_iso()
-        metadata["updated_at"] = now
-        if toc_file_id == "main":
-            metadata["toc_updated_at"] = now
-        for record in metadata.get("toc_files", []):
-            if record.get("id") == toc_file_id:
-                record["updated_at"] = now
-        self._write_metadata(project_id, metadata)
-        return metadata
+        return self.toc_files.save_toc_file(project_id, toc_file_id, toc_text)
 
     def create_generated_toc_file(self, project_id: str, job_id: str, toc_text: str, provider: dict[str, Any] | None = None) -> dict[str, Any]:
-        metadata = self.get_project(project_id)
-        candidate_dir = self._project_dir(project_id) / "toc_candidates"
-        candidate_dir.mkdir(parents=True, exist_ok=True)
-        toc_file_id = f"generated-{job_id}"
-        (candidate_dir / f"{toc_file_id}.json").write_text(toc_text, encoding="utf-8")
-        now = utc_now_iso()
-        record = {
-            "id": toc_file_id,
-            "name": f"generated-{job_id[:8]}.json",
-            "kind": "generated",
-            "created_at": now,
-            "updated_at": now,
-            "source_job_id": job_id,
-            "provider": provider,
-        }
-        records = metadata.setdefault("toc_files", self.list_toc_files(project_id))
-        records.append(record)
-        metadata["generated_at"] = now
-        metadata["updated_at"] = now
-        self._write_metadata(project_id, metadata)
-        return record
-
-    def _toc_file_path(self, project_id: str, toc_file_id: str) -> Path:
-        if toc_file_id == "main":
-            return self.toc_path(project_id)
-        record = next((item for item in self.list_toc_files(project_id) if item.get("id") == toc_file_id), None)
-        if record is None:
-            raise KeyError(toc_file_id)
-        return self._project_dir(project_id) / "toc_candidates" / f"{toc_file_id}.json"
-
-    def _provider_record(
-        self,
-        provider_id: str,
-        name: str,
-        base_url: str,
-        model: str,
-        api_key: str,
-        sampling: dict[str, Any] | None = None,
-        thinking_mode: str | None = None,
-        extra_body: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        return {
-            "id": provider_id,
-            "name": name,
-            "base_url": base_url,
-            "model": model,
-            "api_key": api_key,
-            "sampling": self._normalize_provider_sampling(sampling),
-            "thinking_mode": thinking_mode if thinking_mode in {"auto", "on", "off"} else "auto",
-            "extra_body": extra_body if isinstance(extra_body, dict) and extra_body else None,
-            "verification_status": "unverified",
-            "verification_message": "Not tested",
-            "verified_at": None,
-        }
-
-    def _normalize_provider(self, item: dict[str, Any], index: int) -> dict[str, Any]:
-        provider = self._provider_record(
-            str(item.get("id") or uuid4().hex),
-            str(item.get("name") or item.get("model") or f"VLM API {index + 1}"),
-            str(item.get("base_url") or ""),
-            str(item.get("model") or ""),
-            str(item.get("api_key") or ""),
-            sampling=item.get("sampling") if isinstance(item.get("sampling"), dict) else None,
-            thinking_mode=str(item.get("thinking_mode") or "auto"),
-            extra_body=item.get("extra_body") if isinstance(item.get("extra_body"), dict) else None,
-        )
-        provider.update({key: item.get(key) for key in ("verification_status", "verification_message", "verified_at") if key in item})
-        return provider
-
-    def _provider_connection(self, provider: dict[str, Any]) -> tuple[str, str, str]:
-        return (
-            str(provider.get("base_url") or ""),
-            str(provider.get("model") or ""),
-            str(provider.get("api_key") or ""),
-        )
-
-    def _public_provider(self, provider: dict[str, Any]) -> dict[str, Any]:
-        public = {key: value for key, value in provider.items() if key != "api_key"}
-        api_key = str(provider.get("api_key") or "")
-        public.update({"has_api_key": bool(api_key), "api_key_hint": self._api_key_hint(api_key)})
-        return public
-
-    def _normalize_provider_sampling(self, sampling: dict[str, Any] | None) -> dict[str, Any]:
-        source = sampling if isinstance(sampling, dict) else {"temperature": 0}
-        normalized: dict[str, Any] = {}
-        for key in ("temperature", "top_p", "max_tokens", "presence_penalty", "frequency_penalty", "seed"):
-            value = source.get(key)
-            if value is not None:
-                try:
-                    normalized[key] = int(value) if key in {"max_tokens", "seed"} else float(value)
-                except (TypeError, ValueError):
-                    continue
-        if not normalized:
-            normalized["temperature"] = 0
-        return normalized
-
-    def _project_dir(self, project_id: str) -> Path:
-        return self.projects_dir / project_id
-
-    def _normalize_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
-        page_count = int(metadata.get("page_count") or 0)
-        normalized = dict(metadata)
-        normalized["page_offset"] = int(normalized.get("page_offset") or 0)
-        normalized["toc_start"] = int(normalized.get("toc_start") or 1)
-        normalized["toc_end"] = int(normalized.get("toc_end") or page_count)
-        normalized["provider_id"] = normalized.get("provider_id") or None
-        normalized["inject_toc_page"] = bool(normalized.get("inject_toc_page", True))
-        return normalized
-
-    def _write_metadata(self, project_id: str, metadata: dict[str, Any]) -> None:
-        project_dir = self._project_dir(project_id)
-        project_dir.mkdir(parents=True, exist_ok=True)
-        (project_dir / "project.json").write_text(
-            json.dumps(metadata, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    def _ensure_playground_root(self) -> None:
-        self.playground_chats_dir.mkdir(parents=True, exist_ok=True)
-
-    def _playground_chat_dir(self, chat_id: str) -> Path:
-        return self.playground_chats_dir / self._safe_playground_id(chat_id)
-
-    def _playground_chat_file(self, chat_id: str) -> Path:
-        return self._playground_chat_dir(chat_id) / "chat.json"
-
-    def _read_playground_index(self) -> dict[str, Any]:
-        if not self.playground_index_file.exists():
-            return {"active_chat_id": None}
-        try:
-            raw = json.loads(self.playground_index_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {"active_chat_id": None}
-        return raw if isinstance(raw, dict) else {"active_chat_id": None}
-
-    def _write_playground_index(self, index: dict[str, Any]) -> None:
-        self.playground_dir.mkdir(parents=True, exist_ok=True)
-        self.playground_index_file.write_text(
-            json.dumps(index, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    def _write_playground_chat(self, chat: dict[str, Any]) -> None:
-        chat_dir = self._playground_chat_dir(str(chat["id"]))
-        chat_dir.mkdir(parents=True, exist_ok=True)
-        (chat_dir / "chat.json").write_text(
-            json.dumps(chat, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    def _normalize_playground_chat(self, chat: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(chat.get("id"), str):
-            raise ValueError("Invalid playground chat")
-        normalized = dict(chat)
-        normalized["title"] = str(normalized.get("title") or "New chat")
-        normalized["provider_id"] = normalized.get("provider_id") or None
-        normalized["thinking_mode"] = (
-            normalized.get("thinking_mode") if normalized.get("thinking_mode") in {"auto", "on", "off"} else "auto"
-        )
-        normalized["created_at"] = str(normalized.get("created_at") or "")
-        normalized["updated_at"] = str(normalized.get("updated_at") or normalized["created_at"])
-        messages = normalized.get("messages")
-        normalized["messages"] = messages if isinstance(messages, list) else []
-        return normalized
-
-    def _playground_chat_summary(self, chat: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "id": chat["id"],
-            "title": chat["title"],
-            "created_at": chat["created_at"],
-            "updated_at": chat["updated_at"],
-        }
-
-    def _safe_playground_id(self, value: str) -> str:
-        safe = "".join(char for char in str(value) if char.isalnum() or char in {"-", "_"})
-        if not safe:
-            raise KeyError(value)
-        return safe
-
-    def _initial_toc_text(self, toc_bytes: bytes | None) -> str:
-        if toc_bytes is None:
-            return json.dumps(DEFAULT_TOC, ensure_ascii=False, indent=2)
-        toc_text = toc_bytes.decode("utf-8")
-        raw_data = json.loads(toc_text)
-        normalized = validate_toc_json_structure(raw_data)
-        return json.dumps(normalized, ensure_ascii=False, indent=2)
-
-    def _pdf_page_count(self, pdf_path: Path) -> int:
-        with fitz.open(pdf_path) as doc:
-            return doc.page_count
-
-    def _api_key_hint(self, api_key: str) -> str:
-        if not api_key:
-            return ""
-        if len(api_key) <= 8:
-            return "configured"
-        return f"{api_key[:4]}...{api_key[-4:]}"
+        return self.toc_files.create_generated_toc_file(project_id, job_id, toc_text, provider)
 
 
 store = ProjectStore()
