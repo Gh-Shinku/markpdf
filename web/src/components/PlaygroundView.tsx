@@ -615,6 +615,16 @@ function PlaygroundMessage({
 }
 
 function PlaygroundMarkdown({ text }: { text: string }) {
+  if (isBareJsonResponse(text)) {
+    return (
+      <div className="playground-markdown">
+        <pre>
+          <code>{text}</code>
+        </pre>
+      </div>
+    );
+  }
+
   return (
     <div className="playground-markdown">
       <ReactMarkdown
@@ -631,6 +641,12 @@ function PlaygroundMarkdown({ text }: { text: string }) {
       </ReactMarkdown>
     </div>
   );
+}
+
+function isBareJsonResponse(text: string): boolean {
+  const trimmed = text.trimStart();
+  if (!trimmed || trimmed.startsWith("```")) return false;
+  return trimmed.startsWith("{") || trimmed.startsWith("[");
 }
 
 function AttachmentChip({

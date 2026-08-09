@@ -227,6 +227,24 @@ describe("PlaygroundView", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("## Result\n\n- item\n\n`code`"));
   });
 
+  it("renders bare JSON responses as code blocks", async () => {
+    const json = '{\n  "chapters": []\n}';
+    renderPlayground({
+      initialMessages: [
+        {
+          id: "message-1",
+          role: "assistant",
+          content: json,
+          createdAt: new Date("2026-08-05T00:00:00Z"),
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector(".playground-markdown pre code")?.textContent).toBe(json);
+    });
+  });
+
   it("opens a pending attachment image preview before sending", () => {
     renderPlayground({ pendingAttachments: [attachment] });
 
