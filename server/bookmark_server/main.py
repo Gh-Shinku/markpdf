@@ -7,8 +7,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
-from .routes import projects
-from .services.generation_jobs import generation_job_store
+from .routes import api_router
+from .services import runtime
 
 # Default location of the built frontend relative to the repository root.
 DEFAULT_WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
@@ -16,7 +16,7 @@ DEFAULT_WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    generation_job_store.recover_interrupted_jobs()
+    runtime.generation_job_store.recover_interrupted_jobs()
     yield
 
 
@@ -46,7 +46,7 @@ def mount_web_dist(app: FastAPI, dist_dir: Path | None = None) -> bool:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="PDF Bookmark Server", lifespan=lifespan)
-    app.include_router(projects.router, prefix="/api")
+    app.include_router(api_router, prefix="/api")
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

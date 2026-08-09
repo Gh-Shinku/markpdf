@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from bookmark_server.main import app
-from bookmark_server.routes import projects as projects_route
+from bookmark_server.services import playground_chat, runtime, toc_application, toc_generation
 from bookmark_server.services.generation_jobs import GenerationJobStore
 from bookmark_server.services.projects import ProjectStore
 
@@ -22,8 +22,8 @@ def isolated_project_store(tmp_path, monkeypatch) -> ProjectStore:
     root = tmp_path / "workspace_data"
     store = ProjectStore(root)
     job_store = GenerationJobStore(root)
-    monkeypatch.setattr(projects_route, "store", store)
-    monkeypatch.setattr(projects_route, "generation_job_store", job_store)
+    monkeypatch.setattr(runtime, "store", store)
+    monkeypatch.setattr(runtime, "generation_job_store", job_store)
     return store
 
 
@@ -133,7 +133,7 @@ def test_project_apply_failure_keeps_last_successful_pdf(tmp_path, isolated_proj
         Path(kwargs["output_pdf"]).write_bytes(b"partial PDF")
         raise OSError("disk full")
 
-    monkeypatch.setattr(projects_route, "apply_toc_to_pdf", fail_apply)
+    monkeypatch.setattr(toc_application, "apply_toc_to_pdf", fail_apply)
     failure_response = client.post(
         f"/api/projects/{project['id']}/apply",
         json={"toc_json": toc_text, "page_offset": 0},
@@ -257,7 +257,7 @@ def _save_verified_provider() -> str:
     response = client.put("/api/settings/providers", json={"providers": [{"name": "Test VLM", "base_url": "https://example.test/v1", "model": "model-a", "api_key": "secret"}]})
     assert response.status_code == 200
     provider_id = response.json()["providers"][0]["id"]
-    projects_route.store.record_provider_verification(provider_id, "verified", "Vision test passed")
+    runtime.store.record_provider_verification(provider_id, "verified", "Vision test passed")
     return provider_id
 
 
@@ -282,14 +282,14 @@ def test_provider_sampling_and_qwen_thinking_options_are_used(monkeypatch) -> No
     provider = response.json()["providers"][0]
     assert provider["sampling"] == {"temperature": 0.3, "top_p": 0.8}
     assert provider["thinking_mode"] == "on"
-    projects_route.store.record_provider_verification(provider["id"], "verified", "Vision test passed")
+    runtime.store.record_provider_verification(provider["id"], "verified", "Vision test passed")
     captured: dict[str, Any] = {}
 
     def fake_request_chat_from_vlm(messages, api_key, base_url, model, **kwargs):
         captured.update(kwargs["completion_options"])
         return "ok"
 
-    monkeypatch.setattr(projects_route, "request_chat_from_vlm", fake_request_chat_from_vlm)
+    monkeypatch.setattr(playground_chat, "request_chat_from_vlm", fake_request_chat_from_vlm)
     chat_response = client.post(
         "/api/playground/chat",
         json={"provider_id": provider["id"], "messages": [{"role": "user", "content": "prompt"}]},
@@ -344,14 +344,14 @@ def test_unsupported_thinking_mode_warns_and_omits_extra_body(monkeypatch) -> No
     )
     assert response.status_code == 200
     provider = response.json()["providers"][0]
-    projects_route.store.record_provider_verification(provider["id"], "verified", "Vision test passed")
+    runtime.store.record_provider_verification(provider["id"], "verified", "Vision test passed")
     captured: dict[str, Any] = {}
 
     def fake_request_chat_from_vlm(messages, api_key, base_url, model, **kwargs):
         captured.update(kwargs["completion_options"])
         return "ok"
 
-    monkeypatch.setattr(projects_route, "request_chat_from_vlm", fake_request_chat_from_vlm)
+    monkeypatch.setattr(playground_chat, "request_chat_from_vlm", fake_request_chat_from_vlm)
     chat_response = client.post(
         "/api/playground/chat",
         json={"provider_id": provider["id"], "messages": [{"role": "user", "content": "prompt"}]},
@@ -378,7 +378,7 @@ def test_generate_toc_creates_candidate_file(tmp_path, monkeypatch) -> None:
             {"vlm_calls": 1},
         )
 
-    monkeypatch.setattr(projects_route, "extract_toc_json", fake_extract_toc_json)
+    monkeypatch.setattr(toc_generation, "extract_toc_json", fake_extract_toc_json)
 
     response = client.post(
         f"/api/projects/{project['id']}/generate-toc",
@@ -414,7 +414,7 @@ def test_generate_failure_preserves_saved_json(tmp_path, monkeypatch) -> None:
     def fake_extract_toc_json(**kwargs):
         raise ValueError("VLM rejected the image")
 
-    monkeypatch.setattr(projects_route, "extract_toc_json", fake_extract_toc_json)
+    monkeypatch.setattr(toc_generation, "extract_toc_json", fake_extract_toc_json)
 
     response = client.post(
         f"/api/projects/{project['id']}/generate-toc",
@@ -455,7 +455,7 @@ def test_generation_job_persists_on_disk(tmp_path, isolated_project_store, monke
             {"vlm_calls": 1},
         )
 
-    monkeypatch.setattr(projects_route, "extract_toc_json", fake_extract_toc_json)
+    monkeypatch.setattr(toc_generation, "extract_toc_json", fake_extract_toc_json)
 
     response = client.post(
         f"/api/projects/{project['id']}/generate-toc",
@@ -471,7 +471,7 @@ def test_generation_job_persists_on_disk(tmp_path, isolated_project_store, monke
 
 def test_generation_jobs_list_progress_and_recover_interrupted_job(tmp_path, isolated_project_store) -> None:
     project = _create_project(tmp_path, page_count=3)
-    job_store = projects_route.generation_job_store
+    job_store = runtime.generation_job_store
     job = job_store.create_job(project["id"], toc_start=1, toc_end=3)
     job_store.mark_running(job["id"], "Preparing TOC generation")
     job_store.update_progress(
@@ -501,7 +501,7 @@ def test_generation_jobs_list_progress_and_recover_interrupted_job(tmp_path, iso
 def test_global_generation_jobs_list_sorts_and_filters_status(tmp_path, isolated_project_store) -> None:
     first_project = _create_project(tmp_path, page_count=2)
     second_project = _create_project(tmp_path, page_count=2)
-    job_store = projects_route.generation_job_store
+    job_store = runtime.generation_job_store
     succeeded = job_store.create_job(first_project["id"], toc_start=1, toc_end=1)
     job_store.mark_succeeded(succeeded["id"], "Generated", {})
     active = job_store.create_job(second_project["id"], toc_start=1, toc_end=2)
@@ -525,7 +525,7 @@ def test_batch_generation_persists_project_metainfo(tmp_path, monkeypatch) -> No
         def submit(self, *args, **kwargs):
             return None
 
-    monkeypatch.setattr(projects_route, "generation_executor", FakeExecutor())
+    monkeypatch.setattr(runtime, "generation_executor", FakeExecutor())
 
     response = client.post(
         "/api/generation-jobs/batch",
@@ -565,7 +565,7 @@ def test_batch_generation_persists_project_metainfo(tmp_path, monkeypatch) -> No
 def test_generation_rejects_second_active_job(tmp_path) -> None:
     project = _create_project(tmp_path, page_count=3)
     provider_id = _save_verified_provider()
-    projects_route.generation_job_store.create_job(project["id"], toc_start=1, toc_end=1)
+    runtime.generation_job_store.create_job(project["id"], toc_start=1, toc_end=1)
 
     response = client.post(
         f"/api/projects/{project['id']}/generate-toc",
@@ -678,7 +678,7 @@ def test_playground_chat_sends_text_and_pdf_page_attachment(tmp_path, monkeypatc
         captured["model"] = model
         return "raw vlm response"
 
-    monkeypatch.setattr(projects_route, "request_chat_from_vlm", fake_request_chat_from_vlm)
+    monkeypatch.setattr(playground_chat, "request_chat_from_vlm", fake_request_chat_from_vlm)
 
     response = client.post(
         "/api/playground/chat",
@@ -721,7 +721,7 @@ def test_playground_chat_sessions_save_history_but_send_only_current_message(mon
         captured_calls.append(messages)
         return f"answer {len(captured_calls)}"
 
-    monkeypatch.setattr(projects_route, "request_chat_from_vlm", fake_request_chat_from_vlm)
+    monkeypatch.setattr(playground_chat, "request_chat_from_vlm", fake_request_chat_from_vlm)
 
     create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
     assert create_response.status_code == 200
@@ -787,7 +787,7 @@ def test_playground_chat_stream_sends_deltas_and_saves_history(monkeypatch) -> N
         yield "hello"
         yield " world"
 
-    monkeypatch.setattr(projects_route, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
+    monkeypatch.setattr(playground_chat, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
     create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
     chat_id = create_response.json()["chat"]["id"]
 
@@ -819,7 +819,7 @@ def test_playground_chat_stream_sends_thinking_without_saving_it(monkeypatch) ->
         yield {"type": "thinking", "text": "reasoning"}
         yield {"type": "content", "text": "answer"}
 
-    monkeypatch.setattr(projects_route, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
+    monkeypatch.setattr(playground_chat, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
     create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
     chat_id = create_response.json()["chat"]["id"]
 
@@ -858,7 +858,7 @@ def test_playground_chat_stream_suppresses_thinking_when_provider_is_off(monkeyp
     )
     assert response.status_code == 200
     provider = response.json()["providers"][0]
-    projects_route.store.record_provider_verification(provider["id"], "verified", "Vision test passed")
+    runtime.store.record_provider_verification(provider["id"], "verified", "Vision test passed")
     captured: dict[str, Any] = {}
 
     def fake_request_chat_from_vlm_stream(messages, api_key, base_url, model, **kwargs):
@@ -866,7 +866,7 @@ def test_playground_chat_stream_suppresses_thinking_when_provider_is_off(monkeyp
         yield {"type": "thinking", "text": "reasoning"}
         yield {"type": "content", "text": "answer"}
 
-    monkeypatch.setattr(projects_route, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
+    monkeypatch.setattr(playground_chat, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
     create_response = client.post("/api/playground/chats", json={"provider_id": provider["id"]})
     chat_id = create_response.json()["chat"]["id"]
 
@@ -892,7 +892,7 @@ def test_playground_chat_stream_error_does_not_save_incomplete_history(monkeypat
         yield "partial"
         raise RuntimeError("stream failed")
 
-    monkeypatch.setattr(projects_route, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
+    monkeypatch.setattr(playground_chat, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
     create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
     chat_id = create_response.json()["chat"]["id"]
 
@@ -947,7 +947,7 @@ def test_playground_chat_session_stores_pdf_page_attachment(tmp_path, monkeypatc
     def fake_request_chat_from_vlm(messages, api_key, base_url, model, **kwargs):
         return "raw vlm response"
 
-    monkeypatch.setattr(projects_route, "request_chat_from_vlm", fake_request_chat_from_vlm)
+    monkeypatch.setattr(playground_chat, "request_chat_from_vlm", fake_request_chat_from_vlm)
 
     create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
     chat_id = create_response.json()["chat"]["id"]
@@ -1025,7 +1025,7 @@ def test_generate_toc_auto_apply_failure_marks_job_failed(tmp_path, monkeypatch)
             {"vlm_calls": 1},
         )
 
-    monkeypatch.setattr(projects_route, "extract_toc_json", fake_extract_toc_json)
+    monkeypatch.setattr(toc_generation, "extract_toc_json", fake_extract_toc_json)
 
     response = client.post(
         f"/api/projects/{project['id']}/generate-toc",

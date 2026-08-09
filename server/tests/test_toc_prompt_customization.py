@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from bookmark_server.main import app
-from bookmark_server.routes import projects as projects_route
+from bookmark_server.services import runtime
 from bookmark_server.services.projects import ProjectStore
 from bookmark_server.services.toc_extraction import (
     DEFAULT_FLAT_PROMPT,
@@ -27,7 +27,7 @@ client = TestClient(app)
 def isolated_project_store(tmp_path, monkeypatch) -> ProjectStore:
     root = tmp_path / "workspace_data"
     store = ProjectStore(root)
-    monkeypatch.setattr(projects_route, "store", store)
+    monkeypatch.setattr(runtime, "store", store)
     return store
 
 
