@@ -202,6 +202,10 @@ generation task.
 - Click **Inject prompt into chat** to copy the current playground prompt into
   the chat box, edit it if needed, then send. The server sends exactly the text
   visible in the chat box.
+- Chat sessions are saved by the backend and restored when Playground is opened
+  again. A model request uses only the current user message and its attached
+  images; previous chat history is not sent as context.
+- Click an image in the chat history to preview it.
 - Save the current playground prompt as the global page-scanning prompt.
 
 When a page image is sent, the server re-renders the same project page and

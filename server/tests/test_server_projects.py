@@ -611,6 +611,119 @@ def test_playground_chat_sends_text_and_pdf_page_attachment(tmp_path, monkeypatc
     assert captured["messages"][0]["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
+def test_playground_chat_sessions_save_history_but_send_only_current_message(monkeypatch) -> None:
+    provider_id = _save_verified_provider()
+    captured_calls: list[list[dict[str, Any]]] = []
+
+    def fake_request_chat_from_vlm(messages, api_key, base_url, model):
+        captured_calls.append(messages)
+        return f"answer {len(captured_calls)}"
+
+    monkeypatch.setattr(projects_route, "request_chat_from_vlm", fake_request_chat_from_vlm)
+
+    create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
+    assert create_response.status_code == 200
+    chat_id = create_response.json()["chat"]["id"]
+
+    first_response = client.post(
+        f"/api/playground/chats/{chat_id}/messages",
+        json={
+            "provider_id": provider_id,
+            "message": {"id": "user-1", "role": "user", "content": "old prompt", "attachments": []},
+        },
+    )
+    second_response = client.post(
+        f"/api/playground/chats/{chat_id}/messages",
+        json={
+            "provider_id": provider_id,
+            "message": {"id": "user-2", "role": "user", "content": "current prompt", "attachments": []},
+        },
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert captured_calls[-1] == [{"role": "user", "content": "current prompt"}]
+    chat_response = client.get(f"/api/playground/chats/{chat_id}")
+    assert chat_response.status_code == 200
+    messages = chat_response.json()["chat"]["messages"]
+    assert [message["content"] for message in messages] == [
+        "old prompt",
+        "answer 1",
+        "current prompt",
+        "answer 2",
+    ]
+
+
+def test_playground_chat_session_rename() -> None:
+    provider_id = _save_verified_provider()
+    create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
+    chat_id = create_response.json()["chat"]["id"]
+
+    rename_response = client.patch(
+        f"/api/playground/chats/{chat_id}",
+        json={"title": "  Renamed chat  "},
+    )
+
+    assert rename_response.status_code == 200
+    assert rename_response.json()["chat"]["title"] == "Renamed chat"
+    assert rename_response.json()["chats"][0]["title"] == "Renamed chat"
+    get_response = client.get(f"/api/playground/chats/{chat_id}")
+    assert get_response.json()["chat"]["title"] == "Renamed chat"
+
+
+def test_playground_chat_session_rename_rejects_empty_title() -> None:
+    provider_id = _save_verified_provider()
+    create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
+    chat_id = create_response.json()["chat"]["id"]
+
+    response = client.patch(f"/api/playground/chats/{chat_id}", json={"title": "   "})
+
+    assert response.status_code == 400
+    assert "required" in response.json()["detail"]
+
+
+def test_playground_chat_session_stores_pdf_page_attachment(tmp_path, monkeypatch) -> None:
+    project = _create_project(tmp_path, page_count=1)
+    provider_id = _save_verified_provider()
+    rendered = client.get(f"/api/projects/{project['id']}/rendered-pages/1").json()
+
+    def fake_request_chat_from_vlm(messages, api_key, base_url, model):
+        return "raw vlm response"
+
+    monkeypatch.setattr(projects_route, "request_chat_from_vlm", fake_request_chat_from_vlm)
+
+    create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
+    chat_id = create_response.json()["chat"]["id"]
+    send_response = client.post(
+        f"/api/playground/chats/{chat_id}/messages",
+        json={
+            "provider_id": provider_id,
+            "message": {
+                "id": "user-with-image",
+                "role": "user",
+                "content": "Extract this page.",
+                "attachments": [
+                    {
+                        "type": "pdf_page",
+                        "project_id": project["id"],
+                        "page": 1,
+                        "dpi": 220,
+                        "sha256": rendered["sha256"],
+                    }
+                ],
+            },
+        },
+    )
+
+    assert send_response.status_code == 200
+    attachment = send_response.json()["chat"]["messages"][0]["attachments"][0]
+    assert attachment["data_url"].startswith("/api/playground/chats/")
+    image_response = client.get(attachment["data_url"])
+    assert image_response.status_code == 200
+    assert image_response.headers["content-type"] == "image/png"
+    assert image_response.content.startswith(b"\x89PNG")
+
+
 def test_playground_chat_rejects_changed_rendered_page_hash(tmp_path) -> None:
     project = _create_project(tmp_path, page_count=1)
     provider_id = _save_verified_provider()

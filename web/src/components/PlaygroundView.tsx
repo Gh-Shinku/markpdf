@@ -1,4 +1,10 @@
-import { useMemo } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -10,15 +16,25 @@ import {
   useLocalRuntime,
   type ChatModelAdapter,
   type ThreadMessage,
+  type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { ImagePlus, RotateCcw, Save, SendHorizontal, X } from "lucide-react";
+import { ImagePlus, Pencil, Plus, Save, SendHorizontal, Trash2, X } from "lucide-react";
 import { AppNavigation } from "./AppNavigation";
 import type { Project, VlmProvider } from "../types";
-import type { PlaygroundAttachment, PlaygroundChatMessage } from "../features/playground/api";
+import type {
+  PlaygroundAttachment,
+  PlaygroundChatMessage,
+  PlaygroundChatSessionSummary,
+} from "../features/playground/api";
+
+type ActivePlaygroundPanel = "prompt" | "context" | null;
 
 type PlaygroundViewProps = {
   projects: Project[];
   providers: VlmProvider[];
+  chatSessions: PlaygroundChatSessionSummary[];
+  activeChatId: string;
+  initialMessages: ThreadMessageLike[];
   prompt: string;
   selectedProjectId: string;
   selectedProviderId: string;
@@ -27,6 +43,7 @@ type PlaygroundViewProps = {
   sentAttachmentsByMessageId: Record<string, PlaygroundAttachment[]>;
   isRenderingPage: boolean;
   isSavingPrompt: boolean;
+  isCreatingChat: boolean;
   onPromptChange: (value: string) => void;
   onSelectedProjectChange: (value: string) => void;
   onSelectedProviderChange: (value: string) => void;
@@ -36,17 +53,23 @@ type PlaygroundViewProps = {
   onSavePrompt: () => void;
   onRestoreDefaultPrompt: () => void;
   onNewChat: () => void;
+  onSelectChat: (chatId: string) => void;
+  onDeleteChat: (chatId: string) => void;
+  onRenameChat: (chatId: string, title: string) => void;
   onTakePendingAttachments: (messageId: string) => PlaygroundAttachment[];
   onOpenHome: () => void;
   onOpenTasks: () => void;
   onOpenDocs: () => void;
   onOpenSettings: () => void;
-  onSendChat: (messages: PlaygroundChatMessage[]) => Promise<string>;
+  onSendChat: (message: PlaygroundChatMessage) => Promise<string>;
 };
 
 export function PlaygroundView({
   projects,
   providers,
+  chatSessions,
+  activeChatId,
+  initialMessages,
   prompt,
   selectedProjectId,
   selectedProviderId,
@@ -55,6 +78,7 @@ export function PlaygroundView({
   sentAttachmentsByMessageId,
   isRenderingPage,
   isSavingPrompt,
+  isCreatingChat,
   onPromptChange,
   onSelectedProjectChange,
   onSelectedProviderChange,
@@ -64,6 +88,9 @@ export function PlaygroundView({
   onSavePrompt,
   onRestoreDefaultPrompt,
   onNewChat,
+  onSelectChat,
+  onDeleteChat,
+  onRenameChat,
   onTakePendingAttachments,
   onOpenHome,
   onOpenTasks,
@@ -71,6 +98,7 @@ export function PlaygroundView({
   onOpenSettings,
   onSendChat,
 }: PlaygroundViewProps) {
+  const [activePanel, setActivePanel] = useState<ActivePlaygroundPanel>(null);
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? null;
   const chatAdapter = useMemo<ChatModelAdapter>(
@@ -84,15 +112,25 @@ export function PlaygroundView({
           lastUserMessage && takenAttachments.length
             ? { ...sentAttachmentsByMessageId, [lastUserMessage.id]: takenAttachments }
             : sentAttachmentsByMessageId;
-        const response = await onSendChat(
-          toPlaygroundMessages(messages, nextAttachmentsByMessageId),
-        );
+        const userMessage = toLastPlaygroundUserMessage(messages, nextAttachmentsByMessageId);
+        if (!userMessage) throw new Error("Type a message before sending");
+        const response = await onSendChat(userMessage);
         return { content: [{ type: "text", text: response }] };
       },
     }),
     [onSendChat, onTakePendingAttachments, sentAttachmentsByMessageId],
   );
-  const runtime = useLocalRuntime(chatAdapter);
+  const runtime = useLocalRuntime(chatAdapter, { initialMessages });
+  const closePanel = () => setActivePanel(null);
+
+  useEffect(() => {
+    if (!activePanel) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closePanel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activePanel]);
 
   return (
     <main className="app-shell playground-shell">
@@ -109,109 +147,118 @@ export function PlaygroundView({
           <p className="eyebrow">Prompt lab</p>
           <h1>Prompt Playground</h1>
         </div>
-        <div className="header-actions">
-          <button className="secondary-action" type="button" onClick={onNewChat}>
-            <RotateCcw size={16} aria-hidden="true" />
-            New chat
-          </button>
-        </div>
       </header>
       <section className="playground-layout">
         <aside className="playground-controls" aria-label="Playground controls">
-          <section className="playground-card" aria-labelledby="playground-prompt-heading">
-            <div className="playground-card-header">
-              <div>
-                <p className="section-kicker">Prompt</p>
-                <h2 id="playground-prompt-heading">Page extraction prompt</h2>
-              </div>
-              <button className="secondary-action" type="button" onClick={onRestoreDefaultPrompt}>
-                Restore default
+          <div className="playground-sidebar-actions">
+            <button
+              className="primary-action playground-new-chat-button"
+              type="button"
+              disabled={isCreatingChat}
+              onClick={onNewChat}
+            >
+              <Plus size={16} aria-hidden="true" />
+              New chat
+            </button>
+            <div className="playground-panel-actions" aria-label="Playground panels">
+              <button
+                className={`playground-panel-button ${activePanel === "prompt" ? "active" : ""}`}
+                type="button"
+                aria-expanded={activePanel === "prompt"}
+                onClick={() => setActivePanel((panel) => (panel === "prompt" ? null : "prompt"))}
+              >
+                Prompt
+              </button>
+              <button
+                className={`playground-panel-button ${activePanel === "context" ? "active" : ""}`}
+                type="button"
+                aria-expanded={activePanel === "context"}
+                onClick={() => setActivePanel((panel) => (panel === "context" ? null : "context"))}
+              >
+                Context
               </button>
             </div>
-            <textarea
-              className="prompt-textarea playground-prompt"
-              aria-label="Playground prompt"
-              spellCheck={false}
-              value={prompt}
-              onChange={(event) => onPromptChange(event.target.value)}
-            />
-            <button
-              className="primary-action"
-              type="button"
-              disabled={isSavingPrompt}
-              onClick={onSavePrompt}
-            >
-              <Save size={16} aria-hidden="true" />
-              Save as global prompt
-            </button>
-          </section>
+          </div>
 
-          <section className="playground-card" aria-labelledby="playground-context-heading">
-            <div className="playground-card-header">
-              <div>
-                <p className="section-kicker">Context</p>
-                <h2 id="playground-context-heading">Insert PDF page image</h2>
-              </div>
+          <section
+            className="playground-chat-history"
+            aria-labelledby="playground-sessions-heading"
+          >
+            <h2 id="playground-sessions-heading">Chats</h2>
+            <div className="playground-chat-list">
+              {chatSessions.map((chat) => (
+                <PlaygroundChatListItem
+                  key={chat.id}
+                  chat={chat}
+                  isActive={chat.id === activeChatId}
+                  onSelectChat={onSelectChat}
+                  onDeleteChat={onDeleteChat}
+                  onRenameChat={onRenameChat}
+                />
+              ))}
             </div>
-            <label className="playground-field">
-              <span>VLM API</span>
-              <select
-                value={selectedProviderId}
-                onChange={(event) => onSelectedProviderChange(event.target.value)}
-              >
-                {providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="playground-field">
-              <span>Project PDF</span>
-              <select
-                value={selectedProjectId}
-                onChange={(event) => onSelectedProjectChange(event.target.value)}
-              >
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="playground-field">
-              <span>PDF page</span>
-              <input
-                type="number"
-                min={1}
-                max={selectedProject?.page_count ?? undefined}
-                value={pageNumber}
-                onChange={(event) => onPageNumberChange(event.target.value)}
-              />
-            </label>
-            <button
-              className="secondary-action"
-              type="button"
-              disabled={!selectedProject || isRenderingPage}
-              onClick={onInsertRenderedPage}
-            >
-              <ImagePlus size={16} aria-hidden="true" />
-              Insert rendered page
-            </button>
-            {!selectedProvider ? (
-              <p className="warning-text">No verified VLM API selected.</p>
-            ) : null}
           </section>
         </aside>
+
+        {activePanel ? (
+          <div className="playground-drawer-backdrop" role="presentation" onClick={closePanel}>
+            <aside
+              className="playground-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="playground-drawer-heading"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="playground-drawer-header">
+                <div>
+                  <p className="section-kicker">{activePanel}</p>
+                  <h2 id="playground-drawer-heading">
+                    {activePanel === "prompt" ? "Page extraction prompt" : "Insert PDF page image"}
+                  </h2>
+                </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label="Close panel"
+                  onClick={closePanel}
+                >
+                  <X size={16} aria-hidden="true" />
+                </button>
+              </div>
+              {activePanel === "prompt" ? (
+                <PromptPanel
+                  prompt={prompt}
+                  isSavingPrompt={isSavingPrompt}
+                  onPromptChange={onPromptChange}
+                  onRestoreDefaultPrompt={onRestoreDefaultPrompt}
+                  onSavePrompt={onSavePrompt}
+                />
+              ) : (
+                <ContextPanel
+                  projects={projects}
+                  providers={providers}
+                  selectedProject={selectedProject}
+                  selectedProvider={selectedProvider}
+                  selectedProjectId={selectedProjectId}
+                  selectedProviderId={selectedProviderId}
+                  pageNumber={pageNumber}
+                  isRenderingPage={isRenderingPage}
+                  onSelectedProjectChange={onSelectedProjectChange}
+                  onSelectedProviderChange={onSelectedProviderChange}
+                  onPageNumberChange={onPageNumberChange}
+                  onInsertRenderedPage={onInsertRenderedPage}
+                />
+              )}
+            </aside>
+          </div>
+        ) : null}
 
         <section className="playground-chat-panel" aria-label="Prompt playground chat">
           <AssistantRuntimeProvider runtime={runtime}>
             <ThreadPrimitive.Root className="playground-thread">
               <ThreadPrimitive.Viewport className="playground-thread-viewport">
                 <ThreadPrimitive.Empty>
-                  <div className="playground-empty">
-                    Insert a PDF page image, write a prompt, and send it to the selected VLM API.
-                  </div>
+                  <div className="playground-empty" aria-hidden="true" />
                 </ThreadPrimitive.Empty>
                 <ThreadPrimitive.Messages
                   components={{
@@ -233,7 +280,10 @@ export function PlaygroundView({
                     ))}
                   </div>
                 ) : null}
-                <PlaygroundComposer prompt={prompt} disabled={!selectedProviderId} />
+                <PlaygroundComposer
+                  prompt={prompt}
+                  disabled={!selectedProviderId || !activeChatId}
+                />
               </ComposerPrimitive.Root>
             </ThreadPrimitive.Root>
           </AssistantRuntimeProvider>
@@ -246,30 +296,45 @@ export function PlaygroundView({
 function PlaygroundComposer({ prompt, disabled }: { prompt: string; disabled: boolean }) {
   const composer = unstable_useComposerInput({ disabled });
   const trimmedPrompt = prompt.trim();
-  const handleInjectPrompt = () => {
+  const completionQuery = composer.value.trim();
+  const showInjectCompletion =
+    !disabled &&
+    Boolean(trimmedPrompt) &&
+    completionQuery.startsWith("/") &&
+    "/inject".startsWith(completionQuery);
+  const completeInjectPrompt = () => {
     if (!trimmedPrompt) return;
-    const currentText = composer.value.trimEnd();
-    composer.setText(currentText ? `${currentText}\n\n${trimmedPrompt}` : trimmedPrompt);
+    composer.setText(trimmedPrompt);
+  };
+  const handleComposerKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (!showInjectCompletion) return;
+    if (event.key !== "Tab" && event.key !== "Enter") return;
+    event.preventDefault();
+    completeInjectPrompt();
   };
 
   return (
-    <>
-      <div className="playground-composer-tools">
-        <button
-          className="secondary-action"
-          type="button"
-          disabled={disabled || !trimmedPrompt}
-          onClick={handleInjectPrompt}
-        >
-          Inject prompt into chat
-        </button>
-      </div>
+    <div className="playground-composer-stack">
+      {showInjectCompletion ? (
+        <div className="playground-command-completion" role="listbox" aria-label="Prompt shortcuts">
+          <div
+            className="playground-command-option"
+            role="option"
+            aria-label="/inject Prompt"
+            aria-selected="true"
+          >
+            <span>/inject</span>
+            <span>Prompt</span>
+          </div>
+        </div>
+      ) : null}
       <div className="playground-composer-row">
         <ComposerPrimitive.Input
           className="playground-composer-input"
-          placeholder="Type or inject a prompt. Ctrl/Cmd+Enter sends."
+          placeholder="Type /inject for prompt shortcut. Ctrl/Cmd+Enter sends."
           submitMode="ctrlEnter"
           disabled={disabled}
+          onKeyDown={handleComposerKeyDown}
         />
         <ComposerPrimitive.Send
           className="primary-action icon-only"
@@ -280,7 +345,212 @@ function PlaygroundComposer({ prompt, disabled }: { prompt: string; disabled: bo
           <SendHorizontal size={16} aria-hidden="true" />
         </ComposerPrimitive.Send>
       </div>
-    </>
+    </div>
+  );
+}
+
+function PlaygroundChatListItem({
+  chat,
+  isActive,
+  onSelectChat,
+  onDeleteChat,
+  onRenameChat,
+}: {
+  chat: PlaygroundChatSessionSummary;
+  isActive: boolean;
+  onSelectChat: (chatId: string) => void;
+  onDeleteChat: (chatId: string) => void;
+  onRenameChat: (chatId: string, title: string) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(chat.title);
+  const renameFinishedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isEditing) setTitleDraft(chat.title);
+  }, [chat.title, isEditing]);
+
+  const startEditing = () => {
+    renameFinishedRef.current = false;
+    setTitleDraft(chat.title);
+    setIsEditing(true);
+  };
+  const commitRename = () => {
+    if (renameFinishedRef.current) return;
+    renameFinishedRef.current = true;
+    const nextTitle = titleDraft.trim();
+    setIsEditing(false);
+    if (!nextTitle || nextTitle === chat.title) {
+      setTitleDraft(chat.title);
+      return;
+    }
+    onRenameChat(chat.id, nextTitle);
+  };
+  const cancelRename = () => {
+    if (renameFinishedRef.current) return;
+    renameFinishedRef.current = true;
+    setTitleDraft(chat.title);
+    setIsEditing(false);
+  };
+
+  return (
+    <div className={`playground-chat-list-item ${isActive ? "active" : ""}`}>
+      {isEditing ? (
+        <input
+          className="playground-chat-title-input"
+          aria-label={`Rename ${chat.title}`}
+          autoFocus
+          value={titleDraft}
+          onChange={(event) => setTitleDraft(event.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commitRename();
+            if (event.key === "Escape") cancelRename();
+          }}
+        />
+      ) : (
+        <button type="button" onClick={() => onSelectChat(chat.id)} onDoubleClick={startEditing}>
+          {chat.title}
+        </button>
+      )}
+      {isEditing ? null : (
+        <button
+          className="icon-button"
+          type="button"
+          aria-label={`Rename ${chat.title}`}
+          onClick={startEditing}
+        >
+          <Pencil size={14} aria-hidden="true" />
+        </button>
+      )}
+      <button
+        className="icon-button"
+        type="button"
+        aria-label={`Delete ${chat.title}`}
+        onClick={() => onDeleteChat(chat.id)}
+      >
+        <Trash2 size={14} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+function PromptPanel({
+  prompt,
+  isSavingPrompt,
+  onPromptChange,
+  onRestoreDefaultPrompt,
+  onSavePrompt,
+}: {
+  prompt: string;
+  isSavingPrompt: boolean;
+  onPromptChange: (value: string) => void;
+  onRestoreDefaultPrompt: () => void;
+  onSavePrompt: () => void;
+}) {
+  return (
+    <div className="playground-drawer-body">
+      <textarea
+        className="prompt-textarea playground-prompt"
+        aria-label="Playground prompt"
+        spellCheck={false}
+        value={prompt}
+        onChange={(event) => onPromptChange(event.target.value)}
+      />
+      <div className="playground-drawer-actions">
+        <button className="secondary-action" type="button" onClick={onRestoreDefaultPrompt}>
+          Restore default
+        </button>
+        <button
+          className="primary-action"
+          type="button"
+          disabled={isSavingPrompt}
+          onClick={onSavePrompt}
+        >
+          <Save size={16} aria-hidden="true" />
+          Save as global prompt
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ContextPanel({
+  projects,
+  providers,
+  selectedProject,
+  selectedProvider,
+  selectedProjectId,
+  selectedProviderId,
+  pageNumber,
+  isRenderingPage,
+  onSelectedProjectChange,
+  onSelectedProviderChange,
+  onPageNumberChange,
+  onInsertRenderedPage,
+}: {
+  projects: Project[];
+  providers: VlmProvider[];
+  selectedProject: Project | null;
+  selectedProvider: VlmProvider | null;
+  selectedProjectId: string;
+  selectedProviderId: string;
+  pageNumber: string;
+  isRenderingPage: boolean;
+  onSelectedProjectChange: (value: string) => void;
+  onSelectedProviderChange: (value: string) => void;
+  onPageNumberChange: (value: string) => void;
+  onInsertRenderedPage: () => void;
+}) {
+  return (
+    <div className="playground-drawer-body">
+      <label className="playground-field">
+        <span>VLM API</span>
+        <select
+          value={selectedProviderId}
+          onChange={(event) => onSelectedProviderChange(event.target.value)}
+        >
+          {providers.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="playground-field">
+        <span>Project PDF</span>
+        <select
+          value={selectedProjectId}
+          onChange={(event) => onSelectedProjectChange(event.target.value)}
+        >
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="playground-field">
+        <span>PDF page</span>
+        <input
+          type="number"
+          min={1}
+          max={selectedProject?.page_count ?? undefined}
+          value={pageNumber}
+          onChange={(event) => onPageNumberChange(event.target.value)}
+        />
+      </label>
+      <button
+        className="secondary-action"
+        type="button"
+        disabled={!selectedProject || isRenderingPage}
+        onClick={onInsertRenderedPage}
+      >
+        <ImagePlus size={16} aria-hidden="true" />
+        Insert rendered page
+      </button>
+      {!selectedProvider ? <p className="warning-text">No verified VLM API selected.</p> : null}
+    </div>
   );
 }
 
@@ -330,29 +600,56 @@ function AttachmentChip({
 }
 
 function AttachmentPreview({ attachment }: { attachment: PlaygroundAttachment }) {
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
   return (
-    <figure className="playground-attachment-preview">
-      <img src={attachment.dataUrl} alt={attachment.name} />
-      <figcaption>{attachment.name}</figcaption>
-    </figure>
+    <>
+      <button
+        className="playground-attachment-preview"
+        type="button"
+        onClick={() => setIsPreviewOpen(true)}
+      >
+        <img src={attachment.dataUrl} alt={attachment.name} />
+        <span>{attachment.name}</span>
+      </button>
+      {isPreviewOpen ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setIsPreviewOpen(false)}>
+          <div
+            className="playground-image-preview-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={attachment.name}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Close image preview"
+              onClick={() => setIsPreviewOpen(false)}
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+            <img src={attachment.dataUrl} alt={attachment.name} />
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
-function toPlaygroundMessages(
+function toLastPlaygroundUserMessage(
   messages: readonly ThreadMessage[],
   attachmentsByMessageId: Record<string, PlaygroundAttachment[]>,
-): PlaygroundChatMessage[] {
-  return messages
-    .filter(
-      (message) =>
-        message.role === "user" || message.role === "assistant" || message.role === "system",
-    )
-    .map((message) => ({
-      role: message.role,
-      content: message.content
-        .filter((part) => part.type === "text")
-        .map((part) => part.text)
-        .join("\n"),
-      attachments: message.role === "user" ? (attachmentsByMessageId[message.id] ?? []) : [],
-    }));
+): PlaygroundChatMessage | null {
+  const message = [...messages].reverse().find((item) => item.role === "user");
+  if (!message) return null;
+  return {
+    id: message.id,
+    role: "user",
+    content: message.content
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("\n"),
+    attachments: attachmentsByMessageId[message.id] ?? [],
+  };
 }

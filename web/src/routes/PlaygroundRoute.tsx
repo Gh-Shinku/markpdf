@@ -2,14 +2,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import type { ThreadMessageLike } from "@assistant-ui/react";
 import { PlaygroundView } from "../components/PlaygroundView";
 import { projectKeys, listProjects } from "../features/projects/api";
 import {
+  createPlaygroundChat,
+  deletePlaygroundChat,
+  getPlaygroundChat,
   getRenderedPdfPage,
+  listPlaygroundChats,
   makePlaygroundAttachment,
-  sendPlaygroundChat,
+  playgroundKeys,
+  renamePlaygroundChat,
+  sendPlaygroundChatMessage,
+  setActivePlaygroundChat,
   type PlaygroundAttachment,
+  type PlaygroundChatListResponse,
   type PlaygroundChatMessage,
+  type PlaygroundChatSession,
+  type PlaygroundChatSessionResponse,
 } from "../features/playground/api";
 import {
   getPrompts,
@@ -25,6 +36,7 @@ export function PlaygroundRoute() {
   const projectsQuery = useQuery({ queryKey: projectKeys.all, queryFn: listProjects });
   const providersQuery = useQuery({ queryKey: settingsKey, queryFn: getProviders });
   const promptsQuery = useQuery({ queryKey: promptsKey, queryFn: getPrompts });
+  const chatListQuery = useQuery({ queryKey: playgroundKeys.chats, queryFn: listPlaygroundChats });
   const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
   const verifiedProviders = useMemo(
     () =>
@@ -34,6 +46,7 @@ export function PlaygroundRoute() {
   const [promptDraft, setPromptDraft] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedProviderId, setSelectedProviderId] = useState("");
+  const [selectedChatId, setSelectedChatId] = useState("");
   const [pageNumber, setPageNumber] = useState("1");
   const [pendingAttachments, setPendingAttachments] = useState<PlaygroundAttachment[]>([]);
   const pendingAttachmentsRef = useRef<PlaygroundAttachment[]>([]);
@@ -41,44 +54,67 @@ export function PlaygroundRoute() {
     Record<string, PlaygroundAttachment[]>
   >({});
   const sentAttachmentsByMessageIdRef = useRef<Record<string, PlaygroundAttachment[]>>({});
-  const [chatKey, setChatKey] = useState(0);
+  const chatQuery = useQuery({
+    queryKey: playgroundKeys.chat(selectedChatId),
+    queryFn: () => getPlaygroundChat(selectedChatId),
+    enabled: Boolean(selectedChatId),
+  });
 
-  useEffect(() => {
-    if (promptsQuery.data) setPromptDraft(promptsQuery.data.prompt);
-  }, [promptsQuery.data]);
+  const clearComposerState = useCallback(() => {
+    pendingAttachmentsRef.current = [];
+    sentAttachmentsByMessageIdRef.current = {};
+    setPendingAttachments([]);
+    setSentAttachmentsByMessageId({});
+  }, []);
 
-  useEffect(() => {
-    if (!projects.length) {
-      setSelectedProjectId("");
-      return;
-    }
-    if (!projects.some((project) => project.id === selectedProjectId)) {
-      setSelectedProjectId(projects[0].id);
-    }
-  }, [projects, selectedProjectId]);
+  const cacheChatList = useCallback(
+    (response: PlaygroundChatListResponse) => {
+      queryClient.setQueryData(playgroundKeys.chats, response);
+    },
+    [queryClient],
+  );
 
-  useEffect(() => {
-    if (!verifiedProviders.length) {
-      setSelectedProviderId("");
-      return;
-    }
-    if (!verifiedProviders.some((provider) => provider.id === selectedProviderId)) {
-      setSelectedProviderId(verifiedProviders[0].id);
-    }
-  }, [verifiedProviders, selectedProviderId]);
+  const cacheChatSession = useCallback(
+    (response: PlaygroundChatSessionResponse) => {
+      queryClient.setQueryData(playgroundKeys.chats, {
+        chats: response.chats,
+        active_chat_id: response.active_chat_id,
+      });
+      queryClient.setQueryData(playgroundKeys.chat(response.chat.id), { chat: response.chat });
+    },
+    [queryClient],
+  );
 
-  useEffect(() => {
-    const selectedProject = projects.find((project) => project.id === selectedProjectId);
-    if (!selectedProject) return;
-    const page = Number.parseInt(pageNumber, 10);
-    if (!Number.isInteger(page) || page < 1) {
-      setPageNumber("1");
-      return;
-    }
-    if (page > selectedProject.page_count) {
-      setPageNumber(String(selectedProject.page_count));
-    }
-  }, [pageNumber, projects, selectedProjectId]);
+  const createChatMutation = useMutation({
+    mutationFn: () => createPlaygroundChat(selectedProviderId || null),
+    onSuccess: (response) => {
+      cacheChatSession(response);
+      setSelectedChatId(response.chat.id);
+      clearComposerState();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const deleteChatMutation = useMutation({
+    mutationFn: deletePlaygroundChat,
+    onSuccess: (response) => {
+      cacheChatList(response);
+      const nextChatId = response.active_chat_id ?? response.chats[0]?.id ?? "";
+      setSelectedChatId(nextChatId);
+      clearComposerState();
+      if (!nextChatId && !createChatMutation.isPending) createChatMutation.mutate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const renameChatMutation = useMutation({
+    mutationFn: ({ chatId, title }: { chatId: string; title: string }) =>
+      renamePlaygroundChat(chatId, title),
+    onSuccess: (response) => {
+      cacheChatSession(response);
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   const savePromptMutation = useMutation({
     mutationFn: () => savePrompts(promptDraft),
@@ -108,6 +144,70 @@ export function PlaygroundRoute() {
     onError: (error) => toast.error(error.message),
   });
 
+  useEffect(() => {
+    if (promptsQuery.data) setPromptDraft(promptsQuery.data.prompt);
+  }, [promptsQuery.data]);
+
+  useEffect(() => {
+    if (!projects.length) {
+      setSelectedProjectId("");
+      return;
+    }
+    if (!projects.some((project) => project.id === selectedProjectId)) {
+      setSelectedProjectId(projects[0].id);
+    }
+  }, [projects, selectedProjectId]);
+
+  useEffect(() => {
+    if (!verifiedProviders.length) {
+      setSelectedProviderId("");
+      return;
+    }
+    if (!verifiedProviders.some((provider) => provider.id === selectedProviderId)) {
+      setSelectedProviderId(verifiedProviders[0].id);
+    }
+  }, [verifiedProviders, selectedProviderId]);
+
+  useEffect(() => {
+    if (!chatListQuery.data || selectedChatId) return;
+    if (chatListQuery.data.active_chat_id) {
+      setSelectedChatId(chatListQuery.data.active_chat_id);
+      return;
+    }
+    if (!chatListQuery.data.chats.length && !createChatMutation.isPending) {
+      createChatMutation.mutate();
+    }
+  }, [chatListQuery.data, createChatMutation, selectedChatId]);
+
+  useEffect(() => {
+    if (!chatListQuery.data || !selectedChatId) return;
+    if (chatListQuery.data.chats.some((chat) => chat.id === selectedChatId)) return;
+    setSelectedChatId(chatListQuery.data.active_chat_id ?? chatListQuery.data.chats[0]?.id ?? "");
+  }, [chatListQuery.data, selectedChatId]);
+
+  useEffect(() => {
+    const selectedProject = projects.find((project) => project.id === selectedProjectId);
+    if (!selectedProject) return;
+    const page = Number.parseInt(pageNumber, 10);
+    if (!Number.isInteger(page) || page < 1) {
+      setPageNumber("1");
+      return;
+    }
+    if (page > selectedProject.page_count) {
+      setPageNumber(String(selectedProject.page_count));
+    }
+  }, [pageNumber, projects, selectedProjectId]);
+
+  useEffect(() => {
+    const chat = chatQuery.data?.chat;
+    if (!chat) return;
+    const nextAttachments = attachmentsByMessageIdFromChat(chat);
+    sentAttachmentsByMessageIdRef.current = nextAttachments;
+    setSentAttachmentsByMessageId(nextAttachments);
+    pendingAttachmentsRef.current = [];
+    setPendingAttachments([]);
+  }, [chatQuery.data]);
+
   const handleRemovePendingAttachment = useCallback((attachmentId: string) => {
     const nextAttachments = pendingAttachmentsRef.current.filter(
       (attachment) => attachment.id !== attachmentId,
@@ -129,28 +229,47 @@ export function PlaygroundRoute() {
     return attachments;
   }, []);
 
-  const handleNewChat = useCallback(() => {
-    pendingAttachmentsRef.current = [];
-    sentAttachmentsByMessageIdRef.current = {};
-    setPendingAttachments([]);
-    setSentAttachmentsByMessageId({});
-    setChatKey((value) => value + 1);
-  }, []);
+  const handleSelectChat = useCallback(
+    async (chatId: string) => {
+      if (chatId === selectedChatId) return;
+      setSelectedChatId(chatId);
+      clearComposerState();
+      try {
+        cacheChatList(await setActivePlaygroundChat(chatId));
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to open chat");
+      }
+    },
+    [cacheChatList, clearComposerState, selectedChatId],
+  );
 
   const handleSendChat = useCallback(
-    async (messages: PlaygroundChatMessage[]) => {
+    async (message: PlaygroundChatMessage) => {
       if (!selectedProviderId) throw new Error("Select a verified VLM API first");
-      const response = await sendPlaygroundChat(selectedProviderId, messages);
+      if (!selectedChatId) throw new Error("Open a chat session first");
+      const response = await sendPlaygroundChatMessage(selectedChatId, selectedProviderId, message);
+      cacheChatSession(response);
+      const nextAttachments = attachmentsByMessageIdFromChat(response.chat);
+      sentAttachmentsByMessageIdRef.current = nextAttachments;
+      setSentAttachmentsByMessageId(nextAttachments);
       return response.message.content;
     },
-    [selectedProviderId],
+    [cacheChatSession, selectedChatId, selectedProviderId],
+  );
+
+  const initialMessages = useMemo<ThreadMessageLike[]>(
+    () => (chatQuery.data?.chat.messages ?? []).map(toThreadMessageLike),
+    [chatQuery.data?.chat.messages],
   );
 
   return (
     <PlaygroundView
-      key={chatKey}
+      key={selectedChatId || "pending-chat"}
       projects={projects}
       providers={verifiedProviders}
+      chatSessions={chatListQuery.data?.chats ?? []}
+      activeChatId={selectedChatId}
+      initialMessages={initialMessages}
       prompt={promptDraft}
       selectedProjectId={selectedProjectId}
       selectedProviderId={selectedProviderId}
@@ -159,6 +278,7 @@ export function PlaygroundRoute() {
       sentAttachmentsByMessageId={sentAttachmentsByMessageId}
       isRenderingPage={renderPageMutation.isPending}
       isSavingPrompt={savePromptMutation.isPending}
+      isCreatingChat={createChatMutation.isPending}
       onPromptChange={setPromptDraft}
       onSelectedProjectChange={setSelectedProjectId}
       onSelectedProviderChange={setSelectedProviderId}
@@ -167,7 +287,10 @@ export function PlaygroundRoute() {
       onRemovePendingAttachment={handleRemovePendingAttachment}
       onSavePrompt={() => savePromptMutation.mutate()}
       onRestoreDefaultPrompt={() => setPromptDraft(promptsQuery.data?.default ?? "")}
-      onNewChat={handleNewChat}
+      onNewChat={() => createChatMutation.mutate()}
+      onSelectChat={handleSelectChat}
+      onDeleteChat={(chatId) => deleteChatMutation.mutate(chatId)}
+      onRenameChat={(chatId, title) => renameChatMutation.mutate({ chatId, title })}
       onTakePendingAttachments={handleTakePendingAttachments}
       onOpenHome={() => navigate("/")}
       onOpenTasks={() => navigate("/tasks")}
@@ -175,5 +298,25 @@ export function PlaygroundRoute() {
       onOpenSettings={() => navigate("/settings")}
       onSendChat={handleSendChat}
     />
+  );
+}
+
+function toThreadMessageLike(message: PlaygroundChatMessage): ThreadMessageLike {
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.created_at ? new Date(message.created_at) : undefined,
+    status: message.role === "assistant" ? { type: "complete", reason: "stop" } : undefined,
+  };
+}
+
+function attachmentsByMessageIdFromChat(
+  chat: PlaygroundChatSession,
+): Record<string, PlaygroundAttachment[]> {
+  return Object.fromEntries(
+    chat.messages
+      .filter((message) => message.role === "user" && message.id && message.attachments?.length)
+      .map((message) => [message.id as string, message.attachments ?? []]),
   );
 }

@@ -13,7 +13,7 @@ import fitz
 
 from ..core import apply_toc_to_pdf, inject_toc_page_bookmark
 from ..services.generation_jobs import generation_job_store
-from ..services.projects import store
+from ..services.projects import store, utc_now_iso
 from ..services.toc_extraction import (
     DEFAULT_FLAT_PROMPT,
     extract_toc_json,
@@ -95,6 +95,7 @@ class PlaygroundAttachmentPayload(BaseModel):
 
 
 class PlaygroundMessagePayload(BaseModel):
+    id: str | None = None
     role: str
     content: str
     attachments: list[PlaygroundAttachmentPayload] = Field(default_factory=list)
@@ -103,6 +104,19 @@ class PlaygroundMessagePayload(BaseModel):
 class PlaygroundChatPayload(BaseModel):
     provider_id: str
     messages: list[PlaygroundMessagePayload]
+
+
+class PlaygroundSessionMessagePayload(BaseModel):
+    provider_id: str
+    message: PlaygroundMessagePayload
+
+
+class PlaygroundChatCreatePayload(BaseModel):
+    provider_id: str | None = None
+
+
+class PlaygroundChatRenamePayload(BaseModel):
+    title: str
 
 
 def _project_or_404(project_id: str) -> dict[str, Any]:
@@ -126,6 +140,13 @@ def _provider_or_400(provider_id: str) -> dict[str, Any]:
 
 def _provider_snapshot(provider: dict[str, Any]) -> dict[str, str]:
     return {key: str(provider.get(key) or "") for key in ("id", "name", "base_url", "model")}
+
+
+def _playground_chat_or_404(chat_id: str) -> dict[str, Any]:
+    try:
+        return store.get_playground_chat(chat_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Playground chat not found") from exc
 
 
 def _render_project_page_or_http(project_id: str, page: int) -> dict[str, Any]:
@@ -169,6 +190,55 @@ def _playground_messages(payload: PlaygroundChatPayload) -> list[dict[str, Any]]
             parts.append({"type": "image_url", "image_url": {"url": rendered["data_url"]}})
         converted.append({"role": message.role, "content": parts})
     return converted
+
+
+def _playground_message_to_vlm(message: PlaygroundMessagePayload) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if message.role != "user":
+        raise HTTPException(status_code=400, detail="Playground chat sends must use a user message")
+
+    rendered_attachments: list[dict[str, Any]] = []
+    if not message.attachments:
+        return {"role": "user", "content": message.content}, rendered_attachments
+
+    parts: list[dict[str, Any]] = [{"type": "text", "text": message.content}]
+    for attachment in message.attachments:
+        if attachment.type != "pdf_page":
+            raise HTTPException(status_code=400, detail="Unsupported playground attachment type")
+        if attachment.dpi != PLAYGROUND_DPI:
+            raise HTTPException(status_code=400, detail=f"Playground PDF pages must use {PLAYGROUND_DPI} DPI")
+        rendered = _render_project_page_or_http(attachment.project_id, attachment.page)
+        if str(rendered["sha256"]) != attachment.sha256:
+            raise HTTPException(status_code=409, detail="PDF page rendering changed; insert the page again")
+        parts.append({"type": "image_url", "image_url": {"url": rendered["data_url"]}})
+        rendered_attachments.append(
+            {
+                "id": uuid4().hex,
+                "type": "pdf_page",
+                "project_id": attachment.project_id,
+                "page": attachment.page,
+                "dpi": attachment.dpi,
+                "sha256": attachment.sha256,
+                "name": f"page {attachment.page}",
+                "data_url": rendered["data_url"],
+            }
+        )
+    return {"role": "user", "content": parts}, rendered_attachments
+
+
+def _stored_playground_message(
+    *,
+    role: str,
+    content: str,
+    message_id: str | None = None,
+    attachments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": message_id or uuid4().hex,
+        "role": role,
+        "content": content,
+        "created_at": utc_now_iso(),
+        "attachments": attachments or [],
+    }
 
 
 def _validate_generation(project: dict[str, Any], payload: GeneratePayload) -> dict[str, Any]:
@@ -695,6 +765,97 @@ def test_llm_provider(provider_id: str) -> dict[str, Any]:
     except Exception as exc:
         return {"provider": store.record_provider_verification(provider_id, "failed", str(exc))}
     return {"provider": store.record_provider_verification(provider_id, "verified", "Vision test passed")}
+
+
+@router.get("/playground/chats")
+def list_playground_chats() -> dict[str, Any]:
+    return store.list_playground_chats()
+
+
+@router.post("/playground/chats")
+def create_playground_chat(payload: PlaygroundChatCreatePayload | None = None) -> dict[str, Any]:
+    chat = store.create_playground_chat(provider_id=payload.provider_id if payload else None)
+    return {"chat": chat, **store.list_playground_chats()}
+
+
+@router.get("/playground/chats/{chat_id}")
+def get_playground_chat(chat_id: str) -> dict[str, Any]:
+    chat = _playground_chat_or_404(chat_id)
+    store.set_active_playground_chat(chat_id)
+    return {"chat": chat}
+
+
+@router.put("/playground/chats/{chat_id}/active")
+def set_active_playground_chat(chat_id: str) -> dict[str, Any]:
+    return store.set_active_playground_chat(chat_id)
+
+
+@router.patch("/playground/chats/{chat_id}")
+def rename_playground_chat(chat_id: str, payload: PlaygroundChatRenamePayload) -> dict[str, Any]:
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Playground chat title is required")
+    try:
+        chat = store.rename_playground_chat(chat_id, title[:120])
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Playground chat not found") from exc
+    return {"chat": chat, **store.list_playground_chats()}
+
+
+@router.delete("/playground/chats/{chat_id}")
+def delete_playground_chat(chat_id: str) -> dict[str, Any]:
+    try:
+        return store.delete_playground_chat(chat_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Playground chat not found") from exc
+
+
+@router.get("/playground/chats/{chat_id}/attachments/{attachment_filename}")
+def get_playground_chat_attachment(chat_id: str, attachment_filename: str) -> FileResponse:
+    try:
+        path = store.playground_attachment_path(chat_id, attachment_filename)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Playground attachment not found") from exc
+    return FileResponse(path, media_type="image/png")
+
+
+@router.post("/playground/chats/{chat_id}/messages")
+def send_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessagePayload) -> dict[str, Any]:
+    _playground_chat_or_404(chat_id)
+    provider = _provider_or_400(payload.provider_id)
+    vlm_message, rendered_attachments = _playground_message_to_vlm(payload.message)
+    stored_attachments: list[dict[str, Any]] = []
+    try:
+        content = request_chat_from_vlm(
+            [vlm_message],
+            api_key=str(provider["api_key"]),
+            base_url=str(provider["base_url"]),
+            model=str(provider["model"]),
+        )
+        for rendered_attachment in rendered_attachments:
+            attachment_url = store.save_playground_attachment(
+                chat_id,
+                str(rendered_attachment["id"]),
+                str(rendered_attachment["data_url"]),
+            )
+            stored = {key: value for key, value in rendered_attachment.items() if key != "data_url"}
+            stored["url"] = attachment_url
+            stored["data_url"] = attachment_url
+            stored_attachments.append(stored)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    user_message = _stored_playground_message(
+        role="user",
+        content=payload.message.content,
+        message_id=payload.message.id,
+        attachments=stored_attachments,
+    )
+    assistant_message = _stored_playground_message(role="assistant", content=content)
+    chat = store.append_playground_exchange(chat_id, str(provider["id"]), user_message, assistant_message)
+    return {"chat": chat, "message": assistant_message, **store.list_playground_chats()}
 
 
 @router.post("/playground/chat")

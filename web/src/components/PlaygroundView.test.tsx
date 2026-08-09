@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PlaygroundView } from "./PlaygroundView";
 import type { Project, VlmProvider } from "../types";
+import type { PlaygroundAttachment, PlaygroundChatMessage } from "../features/playground/api";
 
 beforeAll(() => {
   class ResizeObserverMock {
@@ -49,6 +50,16 @@ function renderPlayground(overrides: Partial<Parameters<typeof PlaygroundView>[0
   const props: Parameters<typeof PlaygroundView>[0] = {
     projects: [project],
     providers: [provider],
+    chatSessions: [
+      {
+        id: "chat-1",
+        title: "Book prompt",
+        created_at: "2026-08-05T00:00:00Z",
+        updated_at: "2026-08-05T00:00:00Z",
+      },
+    ],
+    activeChatId: "chat-1",
+    initialMessages: [],
     prompt: "Extract TOC entries",
     selectedProjectId: project.id,
     selectedProviderId: provider.id,
@@ -57,6 +68,7 @@ function renderPlayground(overrides: Partial<Parameters<typeof PlaygroundView>[0
     sentAttachmentsByMessageId: {},
     isRenderingPage: false,
     isSavingPrompt: false,
+    isCreatingChat: false,
     onPromptChange: vi.fn(),
     onSelectedProjectChange: vi.fn(),
     onSelectedProviderChange: vi.fn(),
@@ -66,6 +78,9 @@ function renderPlayground(overrides: Partial<Parameters<typeof PlaygroundView>[0
     onSavePrompt: vi.fn(),
     onRestoreDefaultPrompt: vi.fn(),
     onNewChat: vi.fn(),
+    onSelectChat: vi.fn(),
+    onDeleteChat: vi.fn(),
+    onRenameChat: vi.fn(),
     onTakePendingAttachments: vi.fn(() => []),
     onOpenHome: vi.fn(),
     onOpenTasks: vi.fn(),
@@ -79,43 +94,88 @@ function renderPlayground(overrides: Partial<Parameters<typeof PlaygroundView>[0
 }
 
 describe("PlaygroundView", () => {
-  it("renders prompt, provider, project, and page controls", () => {
+  it("renders chat sidebar actions and hides forms until a panel is opened", () => {
     renderPlayground();
 
     expect(screen.getByRole("heading", { name: "Prompt Playground" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Prompt" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Context" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Book prompt" })).toBeTruthy();
+    expect(screen.queryByDisplayValue("Extract TOC entries")).toBeNull();
+  });
+
+  it("opens prompt and context panels from the sidebar", () => {
+    renderPlayground();
+
+    fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
+
     expect(screen.getByDisplayValue("Extract TOC entries")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Page extraction prompt" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close panel" }));
+    expect(screen.queryByDisplayValue("Extract TOC entries")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Context" }));
+
     expect(screen.getByDisplayValue("Vision API")).toBeTruthy();
     expect(screen.getByDisplayValue("Book")).toBeTruthy();
     expect(screen.getByDisplayValue("2")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Insert PDF page image" })).toBeTruthy();
   });
 
   it("runs prompt and attachment actions", () => {
     const props = renderPlayground();
 
+    fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
     fireEvent.click(screen.getByRole("button", { name: "Save as global prompt" }));
+    fireEvent.click(screen.getByRole("button", { name: "Context" }));
     fireEvent.click(screen.getByRole("button", { name: "Insert rendered page" }));
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    fireEvent.click(screen.getByRole("button", { name: "Book prompt" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Book prompt" }));
 
     expect(props.onSavePrompt).toHaveBeenCalledTimes(1);
     expect(props.onInsertRenderedPage).toHaveBeenCalledTimes(1);
+    expect(props.onNewChat).toHaveBeenCalledTimes(1);
+    expect(props.onSelectChat).toHaveBeenCalledWith("chat-1");
+    expect(props.onDeleteChat).toHaveBeenCalledWith("chat-1");
   });
 
-  it("injects the prompt into the visible chat input", () => {
+  it("renames a chat item from the sidebar", () => {
+    const props = renderPlayground();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename Book prompt" }));
+    fireEvent.change(screen.getByLabelText("Rename Book prompt"), {
+      target: { value: "New title" },
+    });
+    fireEvent.keyDown(screen.getByLabelText("Rename Book prompt"), { key: "Enter" });
+
+    expect(props.onRenameChat).toHaveBeenCalledWith("chat-1", "New title");
+  });
+
+  it("completes the inject shortcut into the visible chat input", () => {
     renderPlayground();
 
-    fireEvent.click(screen.getByRole("button", { name: "Inject prompt into chat" }));
-
     const composerInput = screen.getByPlaceholderText(
-      "Type or inject a prompt. Ctrl/Cmd+Enter sends.",
+      "Type /inject for prompt shortcut. Ctrl/Cmd+Enter sends.",
     ) as HTMLTextAreaElement;
+    fireEvent.change(composerInput, { target: { value: "/inject" } });
+
+    expect(screen.getByRole("option", { name: "/inject Prompt" })).toBeTruthy();
+    fireEvent.keyDown(composerInput, { key: "Tab" });
+
     expect(composerInput.value).toBe("Extract TOC entries");
   });
 
   it("sends a visible chat message without crashing message rendering", async () => {
-    const onSendChat = vi.fn(async () => "raw answer");
+    const onSendChat = vi.fn(async (message: PlaygroundChatMessage) => {
+      void message;
+      return "raw answer";
+    });
     renderPlayground({ onSendChat });
 
     fireEvent.change(
-      screen.getByPlaceholderText("Type or inject a prompt. Ctrl/Cmd+Enter sends."),
+      screen.getByPlaceholderText("Type /inject for prompt shortcut. Ctrl/Cmd+Enter sends."),
       {
         target: { value: "Extract this page" },
       },
@@ -123,6 +183,41 @@ describe("PlaygroundView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     await waitFor(() => expect(onSendChat).toHaveBeenCalledTimes(1));
+    expect(onSendChat.mock.calls[0][0]).toMatchObject({
+      role: "user",
+      content: "Extract this page",
+    });
     expect(await screen.findByText("raw answer")).toBeTruthy();
+  });
+
+  it("opens a clicked message image preview", async () => {
+    const attachment: PlaygroundAttachment = {
+      id: "attachment-1",
+      type: "pdf_page",
+      project_id: project.id,
+      page: 1,
+      dpi: 220,
+      sha256: "hash",
+      name: "Book · page 1",
+      dataUrl:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+    };
+    renderPlayground({
+      initialMessages: [
+        {
+          id: "message-1",
+          role: "user",
+          content: "Use this page.",
+          createdAt: new Date("2026-08-05T00:00:00Z"),
+        },
+      ],
+      sentAttachmentsByMessageId: { "message-1": [attachment] },
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: /Book · page 1/ }));
+
+    expect(screen.getByRole("dialog", { name: "Book · page 1" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close image preview" }));
+    expect(screen.queryByRole("dialog", { name: "Book · page 1" })).toBeNull();
   });
 });

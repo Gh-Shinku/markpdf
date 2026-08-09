@@ -1,10 +1,13 @@
 .playground-shell {
+  --playground-sidebar-width: 272px;
+
   min-height: 100vh;
 }
 
 .playground-layout {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  grid-template-columns: var(--playground-sidebar-width) minmax(0, 1fr);
   grid-column: 2;
   min-width: 0;
   min-height: 0;
@@ -15,39 +18,205 @@
 
 .playground-controls {
   display: grid;
-  align-content: start;
-  gap: 14px;
-  min-width: 0;
-  overflow: auto;
-  padding: 18px;
-  border-right: 1px solid var(--line);
-  background: var(--surface-subtle);
-}
-
-.playground-card {
-  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px;
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-subtle) 88%, #000 3%);
 }
 
-.playground-card-header {
+.playground-sidebar-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.playground-new-chat-button {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+}
+
+.playground-panel-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.playground-panel-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.playground-panel-button:hover,
+.playground-panel-button.active {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: var(--accent-soft);
+}
+
+.playground-chat-history {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.playground-chat-history h2 {
+  margin: 4px 4px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.playground-chat-list {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.playground-chat-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  border-radius: 8px;
+}
+
+.playground-chat-list-item.active {
+  background: var(--accent-soft);
+}
+
+.playground-chat-list-item > button:first-child,
+.playground-chat-title-input {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playground-chat-list-item > button:first-child {
+  cursor: pointer;
+}
+
+.playground-chat-list-item.active > button:first-child {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.playground-chat-list-item:hover {
+  background: var(--surface-hover);
+}
+
+.playground-chat-list-item .icon-button {
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+  opacity: 0;
+}
+
+.playground-chat-title-input {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface-raised);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.playground-chat-list-item:hover .icon-button,
+.playground-chat-list-item .icon-button:focus-visible {
+  opacity: 1;
+}
+
+.playground-drawer-backdrop {
+  position: absolute;
+  inset: 0 0 0 var(--playground-sidebar-width);
+  z-index: 12;
+  background: rgb(31 35 40 / 18%);
+}
+
+.playground-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  width: min(420px, calc(100% - 24px));
+  min-width: 320px;
+  padding: 16px;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 16px 0 36px rgb(31 35 40 / 18%);
+  animation: playground-drawer-enter 180ms ease-out;
+}
+
+.playground-drawer-header {
   display: flex;
   align-items: start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.playground-card-header h2 {
+.playground-drawer-header h2 {
   margin: 2px 0 0;
-  font-size: 14px;
+  font-size: 16px;
+}
+
+.playground-drawer-header .icon-button {
+  margin-right: 0;
+}
+
+.playground-drawer-body {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.playground-drawer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .playground-prompt {
-  min-height: 260px;
+  min-height: 360px;
 }
 
 .playground-field {
@@ -163,9 +332,13 @@
   display: grid;
   gap: 6px;
   width: 150px;
-  margin: 0;
+  padding: 0;
+  border: 0;
   color: var(--text-muted);
+  background: transparent;
   font-size: 11px;
+  text-align: left;
+  cursor: zoom-in;
 }
 
 .playground-attachment-preview img {
@@ -178,6 +351,37 @@
   background: var(--surface);
 }
 
+.playground-attachment-preview:hover img {
+  border-color: var(--accent);
+}
+
+.playground-image-preview-modal {
+  position: relative;
+  display: grid;
+  place-items: center;
+  max-width: min(1080px, 96vw);
+  max-height: 92vh;
+  padding: 36px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 18px 48px rgb(31 35 40 / 24%);
+}
+
+.playground-image-preview-modal .icon-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  margin-right: 0;
+}
+
+.playground-image-preview-modal img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(92vh - 56px);
+  object-fit: contain;
+}
+
 .playground-composer {
   display: grid;
   gap: 10px;
@@ -186,13 +390,41 @@
   background: var(--surface-subtle);
 }
 
-.playground-composer-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+.playground-composer-stack {
+  position: relative;
+  display: grid;
   gap: 8px;
-  color: var(--text-muted);
+}
+
+.playground-command-completion {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 5;
+  width: min(360px, 100%);
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 12px 28px rgb(31 35 40 / 16%);
+}
+
+.playground-command-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  background: var(--accent-soft);
   font-size: 12px;
+}
+
+.playground-command-option span:first-child {
+  color: var(--text);
+  font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
+  font-weight: 650;
 }
 
 .playground-attachments {
@@ -268,14 +500,28 @@
 }
 
 @media (max-width: 980px) {
+  .playground-shell {
+    --playground-sidebar-width: 100%;
+  }
+
   .playground-layout {
     grid-template-columns: 1fr;
     overflow: auto;
   }
 
   .playground-controls {
+    min-height: 280px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+
+  .playground-drawer-backdrop {
+    inset: 0;
+  }
+
+  .playground-drawer {
+    width: min(420px, 96vw);
+    min-width: 0;
   }
 
   .playground-chat-panel {
@@ -287,5 +533,17 @@
   .playground-controls,
   .playground-chat-panel {
     padding: 12px;
+  }
+}
+
+@keyframes playground-drawer-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-18px) scaleX(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0) scaleX(1);
   }
 }
