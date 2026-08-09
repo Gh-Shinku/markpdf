@@ -283,9 +283,13 @@ export function WorkspaceView({
                 onChange={onEditorChange}
               />
               {isEditorLoading ? (
-                <div className="json-editor-loading" role="status" aria-live="polite">
+                <div
+                  className="json-editor-loading"
+                  role="status"
+                  aria-live="polite"
+                  aria-label="Loading TOC file"
+                >
                   <Loader2 className="spin" size={18} aria-hidden="true" />
-                  <span>Loading TOC file</span>
                 </div>
               ) : null}
             </div>

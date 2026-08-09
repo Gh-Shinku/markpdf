@@ -354,14 +354,7 @@ export function WorkspaceRoute() {
     tocFilesQuery.isLoading ||
     (!tocText && selectedTocFileId === "main" && tocQuery.isLoading);
   const isTocFileLoading = tocQuery.isLoading || (!tocQuery.data && tocQuery.isFetching);
-  if (isInitialWorkspaceLoading)
-    return (
-      <RouteMessage
-        title="Loading project"
-        message="Opening project workspace."
-        onBack={() => navigate("/")}
-      />
-    );
+  if (isInitialWorkspaceLoading) return <WorkspaceLoading />;
   if (!projectQuery.data || projectQuery.isError || tocQuery.isError)
     return (
       <RouteMessage
@@ -430,6 +423,14 @@ export function WorkspaceRoute() {
         />
       ) : null}
     </>
+  );
+}
+
+function WorkspaceLoading() {
+  return (
+    <main className="app-shell workspace-loading-shell">
+      <span className="workspace-loading-spinner" role="status" aria-label="Loading workspace" />
+    </main>
   );
 }
 

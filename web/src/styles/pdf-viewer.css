@@ -395,21 +395,6 @@
   animation: pdf-loading-fade 320ms ease-out;
 }
 
-.pdf-loading-card {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--surface-raised) 86%, transparent);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 8%);
-  font-size: 12px;
-  font-weight: 600;
-  animation: pdf-loading-card-in 320ms ease-out;
-}
-
 .pdf-loading-spinner {
   width: 16px;
   height: 16px;
@@ -434,20 +419,8 @@
   }
 }
 
-@keyframes pdf-loading-card-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .pdf-loading-overlay,
-  .pdf-loading-card,
   .pdf-loading-spinner {
     animation: none;
   }

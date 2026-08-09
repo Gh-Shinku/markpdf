@@ -623,10 +623,7 @@ export function PdfViewer({
           ) : null}
           {loadState.kind === "loading" ? (
             <div className="pdf-loading-overlay" role="status" aria-live="polite">
-              <div className="pdf-loading-card">
-                <span className="pdf-loading-spinner" aria-hidden="true" />
-                <span>{loadState.message}</span>
-              </div>
+              <span className="pdf-loading-spinner" aria-label="Loading PDF" />
             </div>
           ) : null}
           <div

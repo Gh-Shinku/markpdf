@@ -21,7 +21,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .workspace-shell {
+  .workspace-shell,
+  .workspace-loading-spinner {
     animation: none;
   }
 }
@@ -39,6 +40,28 @@
 .route-fallback p {
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.workspace-loading-shell {
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+  background: var(--canvas);
+}
+
+.workspace-loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: workspace-loading-spin 780ms linear infinite;
+}
+
+@keyframes workspace-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .workspace-grid {
@@ -268,11 +291,8 @@
   z-index: 2;
   display: grid;
   place-items: center;
-  align-content: center;
-  gap: 8px;
   color: var(--text-secondary);
   background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
-  font-size: 12px;
   backdrop-filter: blur(1px);
 }
 
