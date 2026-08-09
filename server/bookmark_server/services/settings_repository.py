@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from .projects_common import utc_now_iso
 from .storage import read_json_object, safe_id, write_json_atomic
-from .toc_extraction import DEFAULT_FLAT_PROMPT
+from .toc_prompts import DEFAULT_FLAT_PROMPT
 
 
 class SettingsRepository:

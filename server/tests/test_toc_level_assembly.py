@@ -7,7 +7,9 @@ from typing import Any
 import fitz
 import pytest
 
+from bookmark_server.services import toc_correction as tc
 from bookmark_server.services import toc_extraction as te
+from bookmark_server.services import toc_extractors as tex
 from bookmark_server.services.toc_extraction import (
     FlatExtractor,
     TOCAssembler,
@@ -286,7 +288,7 @@ class TestLevelCorrection:
         corrected = [
             {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": []},
         ]
-        monkeypatch.setattr(te, "request_llm_json", lambda **kwargs: json.dumps(corrected))
+        monkeypatch.setattr(tc, "request_llm_json", lambda **kwargs: json.dumps(corrected))
         result = correct_tree_levels(
             [{"title": "x", "page": 1, "attribute": "relative", "children": []}],
             api_key="k",
@@ -299,7 +301,7 @@ class TestLevelCorrection:
         def bad_response(**kwargs):
             raise RuntimeError("api down")
 
-        monkeypatch.setattr(te, "request_llm_json", bad_response)
+        monkeypatch.setattr(tc, "request_llm_json", bad_response)
         with pytest.raises(RuntimeError):
             correct_tree_levels(
                 [{"title": "x", "page": 1, "attribute": "relative", "children": []}],
@@ -348,8 +350,8 @@ class TestExtractionIntegration:
             assert "children" in prompt
             return json.dumps(corrected_tree)
 
-        monkeypatch.setattr(te, "request_toc_from_vlm", fake_vlm)
-        monkeypatch.setattr(te, "request_llm_json", fake_llm)
+        monkeypatch.setattr(tex, "request_toc_from_vlm", fake_vlm)
+        monkeypatch.setattr(tc, "request_llm_json", fake_llm)
 
         toc_data, cache_file, loaded_from_cache, raw_cache_file, stats = extract_toc_json(
             input_pdf=input_pdf,
@@ -399,9 +401,9 @@ class TestExtractionIntegration:
             call_index[0] += 1
             return json.dumps(items)
 
-        monkeypatch.setattr(te, "request_toc_from_vlm", fake_vlm)
+        monkeypatch.setattr(tex, "request_toc_from_vlm", fake_vlm)
         monkeypatch.setattr(
-            te,
+            tc,
             "request_llm_json",
             lambda **kwargs: (_ for _ in ()).throw(RuntimeError("api down")),
         )

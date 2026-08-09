@@ -13,6 +13,8 @@ from bookmark_server.services.projects import ProjectStore
 from bookmark_server.services.toc_extraction import (
     DEFAULT_FLAT_PROMPT,
     FlatExtractor,
+    TOCAssembler,
+    extract_toc_json,
     find_matching_flat_raw_cache,
     make_cache_file_path,
     make_flat_pages_work_dir,
@@ -67,6 +69,13 @@ def test_default_flat_prompt_is_byte_identical_to_legacy() -> None:
     assert rendered == LEGACY_FLAT_PROMPT
     assert rendered == DEFAULT_FLAT_PROMPT
     assert "{toc_" not in rendered
+
+
+def test_toc_extraction_facade_exports_legacy_symbols() -> None:
+    assert FlatExtractor.__name__ == "FlatExtractor"
+    assert TOCAssembler.__name__ == "TOCAssembler"
+    assert callable(extract_toc_json)
+    assert callable(make_cache_file_path)
 
 
 def test_custom_prompt_renders_placeholders_and_keeps_json_braces() -> None:

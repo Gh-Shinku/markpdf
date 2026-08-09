@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import runtime
-from .toc_extraction import build_chat_completion_options
+from .vlm_client import build_chat_completion_options
 
 
 class ProviderConfigError(ValueError):

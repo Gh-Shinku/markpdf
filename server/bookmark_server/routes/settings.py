@@ -8,8 +8,9 @@ from fastapi import APIRouter, HTTPException
 
 from ..schemas.settings import LlmSettingsPayload, PromptsPayload, ProvidersPayload
 from ..services import runtime
-from ..services.toc_extraction import DEFAULT_FLAT_PROMPT, request_toc_from_vlm
 from ..services.provider_config import provider_completion_options
+from ..services.toc_prompts import DEFAULT_FLAT_PROMPT
+from ..services.vlm_client import request_toc_from_vlm
 
 
 router = APIRouter(tags=["settings"])

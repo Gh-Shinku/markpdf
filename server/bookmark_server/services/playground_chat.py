@@ -14,7 +14,7 @@ from . import runtime
 from .project_queries import render_project_page
 from .provider_config import get_verified_provider, provider_completion_options
 from .projects import utc_now_iso
-from .toc_extraction import request_chat_from_vlm, request_chat_from_vlm_stream
+from .vlm_client import request_chat_from_vlm, request_chat_from_vlm_stream
 
 
 class PlaygroundChatNotFoundError(KeyError):

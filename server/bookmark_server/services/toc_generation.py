@@ -7,7 +7,7 @@ from . import runtime
 from .project_queries import get_project
 from .provider_config import get_verified_provider, provider_snapshot
 from .toc_application import apply_toc_file_to_project
-from .toc_extraction import extract_toc_json
+from .toc_extraction_pipeline import extract_toc_json
 
 
 class GenerationValidationError(ValueError):

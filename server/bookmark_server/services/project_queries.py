@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import runtime
-from .toc_extraction import render_pdf_page_image
+from .pdf_rendering import render_pdf_page_image
 
 
 class ProjectNotFoundError(KeyError):
