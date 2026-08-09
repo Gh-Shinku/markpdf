@@ -98,10 +98,12 @@ function renderPlayground(overrides: Partial<Parameters<typeof PlaygroundView>[0
     onOpenTasks: vi.fn(),
     onOpenDocs: vi.fn(),
     onOpenSettings: vi.fn(),
-    onSendChat: vi.fn(async () => "ok"),
+    onSendChat: vi.fn(async function* () {
+      yield "ok";
+    }),
     ...overrides,
   };
-  render(<PlaygroundView {...props} />);
+  render(<PlaygroundView key={props.activeChatId || "pending-chat"} {...props} />);
   return props;
 }
 
@@ -179,10 +181,11 @@ describe("PlaygroundView", () => {
     expect(composerInput.value).toBe("Extract TOC entries");
   });
 
-  it("sends a visible chat message without crashing message rendering", async () => {
-    const onSendChat = vi.fn(async (message: PlaygroundChatMessage) => {
+  it("streams a visible chat message without crashing message rendering", async () => {
+    const onSendChat = vi.fn(async function* (message: PlaygroundChatMessage) {
       void message;
-      return "raw answer";
+      yield "raw ";
+      yield "answer";
     });
     renderPlayground({ onSendChat });
 
@@ -200,6 +203,28 @@ describe("PlaygroundView", () => {
       content: "Extract this page",
     });
     expect(await screen.findByText("raw answer")).toBeTruthy();
+  });
+
+  it("renders markdown and copies raw message text", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    renderPlayground({
+      initialMessages: [
+        {
+          id: "message-1",
+          role: "assistant",
+          content: "## Result\n\n- item\n\n`code`",
+          createdAt: new Date("2026-08-05T00:00:00Z"),
+        },
+      ],
+    });
+
+    expect(await screen.findByRole("heading", { name: "Result" })).toBeTruthy();
+    expect(await screen.findByText("item")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy assistant message" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("## Result\n\n- item\n\n`code`"));
   });
 
   it("opens a pending attachment image preview before sending", () => {

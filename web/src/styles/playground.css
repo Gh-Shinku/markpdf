@@ -307,6 +307,13 @@
   justify-self: start;
 }
 
+.playground-message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .playground-message-role {
   color: var(--text-muted);
   font-size: 11px;
@@ -315,11 +322,89 @@
   text-transform: uppercase;
 }
 
-.playground-raw {
+.playground-message-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.playground-message-copy:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.playground-message-copy:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.playground-markdown {
   color: var(--text);
   font-size: 13px;
   line-height: 1.6;
-  white-space: pre-wrap;
+}
+
+.playground-markdown > :first-child {
+  margin-top: 0;
+}
+
+.playground-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.playground-markdown p,
+.playground-markdown ul,
+.playground-markdown ol,
+.playground-markdown pre,
+.playground-markdown table {
+  margin: 0 0 10px;
+}
+
+.playground-markdown ul,
+.playground-markdown ol {
+  padding-left: 20px;
+}
+
+.playground-markdown code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.playground-markdown pre {
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.playground-markdown pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.playground-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.playground-markdown th,
+.playground-markdown td {
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  text-align: left;
 }
 
 .playground-message-attachments {

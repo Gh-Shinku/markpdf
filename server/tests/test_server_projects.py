@@ -654,6 +654,66 @@ def test_playground_chat_sessions_save_history_but_send_only_current_message(mon
     ]
 
 
+def test_playground_chat_stream_sends_deltas_and_saves_history(monkeypatch) -> None:
+    provider_id = _save_verified_provider()
+    captured: dict[str, Any] = {}
+
+    def fake_request_chat_from_vlm_stream(messages, api_key, base_url, model):
+        captured["messages"] = messages
+        yield "hello"
+        yield " world"
+
+    monkeypatch.setattr(projects_route, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
+    create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
+    chat_id = create_response.json()["chat"]["id"]
+
+    response = client.post(
+        f"/api/playground/chats/{chat_id}/messages/stream",
+        json={
+            "provider_id": provider_id,
+            "message": {"id": "user-stream", "role": "user", "content": "current prompt", "attachments": []},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: delta\ndata: {\"text\": \"hello\"}" in response.text
+    assert "event: delta\ndata: {\"text\": \" world\"}" in response.text
+    assert "event: final" in response.text
+    assert captured["messages"] == [{"role": "user", "content": "current prompt"}]
+    chat_response = client.get(f"/api/playground/chats/{chat_id}")
+    assert [message["content"] for message in chat_response.json()["chat"]["messages"]] == [
+        "current prompt",
+        "hello world",
+    ]
+
+
+def test_playground_chat_stream_error_does_not_save_incomplete_history(monkeypatch) -> None:
+    provider_id = _save_verified_provider()
+
+    def fake_request_chat_from_vlm_stream(messages, api_key, base_url, model):
+        yield "partial"
+        raise RuntimeError("stream failed")
+
+    monkeypatch.setattr(projects_route, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
+    create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
+    chat_id = create_response.json()["chat"]["id"]
+
+    response = client.post(
+        f"/api/playground/chats/{chat_id}/messages/stream",
+        json={
+            "provider_id": provider_id,
+            "message": {"id": "user-stream", "role": "user", "content": "current prompt", "attachments": []},
+        },
+    )
+
+    assert response.status_code == 200
+    assert "event: delta\ndata: {\"text\": \"partial\"}" in response.text
+    assert "event: error\ndata: {\"detail\": \"stream failed\"}" in response.text
+    chat_response = client.get(f"/api/playground/chats/{chat_id}")
+    assert chat_response.json()["chat"]["messages"] == []
+
+
 def test_playground_chat_session_rename() -> None:
     provider_id = _save_verified_provider()
     create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})

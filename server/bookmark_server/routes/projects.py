@@ -7,7 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 import fitz
 
@@ -19,6 +19,7 @@ from ..services.toc_extraction import (
     extract_toc_json,
     render_pdf_page_image,
     request_chat_from_vlm,
+    request_chat_from_vlm_stream,
     request_toc_from_vlm,
 )
 
@@ -239,6 +240,10 @@ def _stored_playground_message(
         "created_at": utc_now_iso(),
         "attachments": attachments or [],
     }
+
+
+def _sse_event(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 def _validate_generation(project: dict[str, Any], payload: GeneratePayload) -> dict[str, Any]:
@@ -856,6 +861,51 @@ def send_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessage
     assistant_message = _stored_playground_message(role="assistant", content=content)
     chat = store.append_playground_exchange(chat_id, str(provider["id"]), user_message, assistant_message)
     return {"chat": chat, "message": assistant_message, **store.list_playground_chats()}
+
+
+@router.post("/playground/chats/{chat_id}/messages/stream")
+def stream_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessagePayload) -> StreamingResponse:
+    _playground_chat_or_404(chat_id)
+    provider = _provider_or_400(payload.provider_id)
+    vlm_message, rendered_attachments = _playground_message_to_vlm(payload.message)
+
+    def stream_events():
+        content_chunks: list[str] = []
+        try:
+            for text in request_chat_from_vlm_stream(
+                [vlm_message],
+                api_key=str(provider["api_key"]),
+                base_url=str(provider["base_url"]),
+                model=str(provider["model"]),
+            ):
+                content_chunks.append(text)
+                yield _sse_event("delta", {"text": text})
+
+            stored_attachments: list[dict[str, Any]] = []
+            for rendered_attachment in rendered_attachments:
+                attachment_url = store.save_playground_attachment(
+                    chat_id,
+                    str(rendered_attachment["id"]),
+                    str(rendered_attachment["data_url"]),
+                )
+                stored = {key: value for key, value in rendered_attachment.items() if key != "data_url"}
+                stored["url"] = attachment_url
+                stored["data_url"] = attachment_url
+                stored_attachments.append(stored)
+
+            user_message = _stored_playground_message(
+                role="user",
+                content=payload.message.content,
+                message_id=payload.message.id,
+                attachments=stored_attachments,
+            )
+            assistant_message = _stored_playground_message(role="assistant", content="".join(content_chunks))
+            chat = store.append_playground_exchange(chat_id, str(provider["id"]), user_message, assistant_message)
+            yield _sse_event("final", {"chat": chat, "message": assistant_message, **store.list_playground_chats()})
+        except Exception as exc:
+            yield _sse_event("error", {"detail": str(exc)})
+
+    return StreamingResponse(stream_events(), media_type="text/event-stream")
 
 
 @router.post("/playground/chat")

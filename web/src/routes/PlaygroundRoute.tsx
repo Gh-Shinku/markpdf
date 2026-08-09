@@ -15,8 +15,8 @@ import {
   makePlaygroundAttachment,
   playgroundKeys,
   renamePlaygroundChat,
-  sendPlaygroundChatMessage,
   setActivePlaygroundChat,
+  streamPlaygroundChatMessage,
   type PlaygroundAttachment,
   type PlaygroundChatListResponse,
   type PlaygroundChatMessage,
@@ -255,15 +255,29 @@ export function PlaygroundRoute() {
   );
 
   const handleSendChat = useCallback(
-    async (message: PlaygroundChatMessage) => {
+    async function* (message: PlaygroundChatMessage, signal: AbortSignal) {
       if (!selectedProviderId) throw new Error("Select a verified VLM API first");
       if (!selectedChatId) throw new Error("Open a chat session first");
-      const response = await sendPlaygroundChatMessage(selectedChatId, selectedProviderId, message);
-      cacheChatSession(response);
-      const nextAttachments = attachmentsByMessageIdFromChat(response.chat);
-      sentAttachmentsByMessageIdRef.current = nextAttachments;
-      setSentAttachmentsByMessageId(nextAttachments);
-      return response.message.content;
+      let receivedFinalEvent = false;
+      for await (const event of streamPlaygroundChatMessage(
+        selectedChatId,
+        selectedProviderId,
+        message,
+        signal,
+      )) {
+        if (event.type === "delta") {
+          yield event.text;
+          continue;
+        }
+        receivedFinalEvent = true;
+        cacheChatSession(event.response);
+        const nextAttachments = attachmentsByMessageIdFromChat(event.response.chat);
+        sentAttachmentsByMessageIdRef.current = nextAttachments;
+        setSentAttachmentsByMessageId(nextAttachments);
+      }
+      if (!receivedFinalEvent && !signal.aborted) {
+        throw new Error("Streaming response ended before the chat was saved");
+      }
     },
     [cacheChatSession, selectedChatId, selectedProviderId],
   );

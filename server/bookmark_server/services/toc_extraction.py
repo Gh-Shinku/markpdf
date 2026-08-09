@@ -132,6 +132,29 @@ def request_chat_from_vlm(
     return _read_completion_text(completion.choices[0].message.content)
 
 
+def request_chat_from_vlm_stream(
+    messages: list[dict[str, Any]],
+    api_key: str,
+    base_url: str,
+    model: str,
+):
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    stream = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0,
+        stream=True,
+    )
+    for chunk in stream:
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue
+        delta = getattr(choices[0], "delta", None)
+        text = _read_completion_delta_text(getattr(delta, "content", None))
+        if text:
+            yield text
+
+
 def _read_completion_text(message_content: Any) -> str:
     if isinstance(message_content, str):
         return message_content
@@ -147,6 +170,22 @@ def _read_completion_text(message_content: Any) -> str:
             return "\n".join(chunks)
 
     raise ValueError("VLM response does not include readable text content")
+
+
+def _read_completion_delta_text(delta_content: Any) -> str:
+    if isinstance(delta_content, str):
+        return delta_content
+
+    if isinstance(delta_content, list):
+        chunks: list[str] = []
+        for part in delta_content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text = part.get("text")
+                if isinstance(text, str):
+                    chunks.append(text)
+        return "".join(chunks)
+
+    return ""
 
 
 def render_pdf_page_image(

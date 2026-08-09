@@ -4,11 +4,11 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
-  MessagePartPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
   unstable_useComposerInput,
@@ -18,7 +18,10 @@ import {
   type ThreadMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { ImagePlus, Pencil, Plus, Save, SendHorizontal, Trash2, X } from "lucide-react";
+import { Copy, ImagePlus, Pencil, Plus, Save, SendHorizontal, Trash2, X } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { toast } from "sonner";
 import { AppNavigation } from "./AppNavigation";
 import type { Project, VlmProvider } from "../types";
 import type {
@@ -28,6 +31,7 @@ import type {
 } from "../features/playground/api";
 
 type ActivePlaygroundPanel = "prompt" | "context" | null;
+const PLAYGROUND_MARKDOWN_PLUGINS = [remarkGfm];
 
 type PlaygroundViewProps = {
   projects: Project[];
@@ -61,7 +65,10 @@ type PlaygroundViewProps = {
   onOpenTasks: () => void;
   onOpenDocs: () => void;
   onOpenSettings: () => void;
-  onSendChat: (message: PlaygroundChatMessage) => Promise<string>;
+  onSendChat: (
+    message: PlaygroundChatMessage,
+    abortSignal: AbortSignal,
+  ) => AsyncGenerator<string, void>;
 };
 
 export function PlaygroundView({
@@ -103,7 +110,7 @@ export function PlaygroundView({
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? null;
   const chatAdapter = useMemo<ChatModelAdapter>(
     () => ({
-      async run({ messages }) {
+      async *run({ messages, abortSignal }) {
         const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
         const takenAttachments = lastUserMessage
           ? onTakePendingAttachments(lastUserMessage.id)
@@ -114,14 +121,21 @@ export function PlaygroundView({
             : sentAttachmentsByMessageId;
         const userMessage = toLastPlaygroundUserMessage(messages, nextAttachmentsByMessageId);
         if (!userMessage) throw new Error("Type a message before sending");
-        const response = await onSendChat(userMessage);
-        return { content: [{ type: "text", text: response }] };
+        let assistantText = "";
+        for await (const text of onSendChat(userMessage, abortSignal)) {
+          assistantText += text;
+          yield { content: [{ type: "text", text: assistantText }] };
+        }
       },
     }),
     [onSendChat, onTakePendingAttachments, sentAttachmentsByMessageId],
   );
   const runtime = useLocalRuntime(chatAdapter, { initialMessages });
   const closePanel = () => setActivePanel(null);
+
+  useEffect(() => {
+    runtime.thread.reset(initialMessages);
+  }, [activeChatId, initialMessages, runtime]);
 
   useEffect(() => {
     if (!activePanel) return;
@@ -561,10 +575,33 @@ function PlaygroundMessage({
 }) {
   const id = useAuiState((state) => state.message.id);
   const role = useAuiState((state) => state.message.role);
+  const rawText = useAuiState((state) =>
+    state.message.content
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join(""),
+  );
   const attachments = role === "user" ? (attachmentsByMessageId[id] ?? []) : [];
+  const handleCopyMessage = async () => {
+    await navigator.clipboard.writeText(rawText);
+    toast.success("Message copied");
+  };
+
   return (
     <MessagePrimitive.Root className={`playground-message ${role}`}>
-      <div className="playground-message-role">{role}</div>
+      <div className="playground-message-header">
+        <div className="playground-message-role">{role}</div>
+        <button
+          className="playground-message-copy"
+          type="button"
+          disabled={!rawText}
+          aria-label={`Copy ${role} message`}
+          onClick={handleCopyMessage}
+        >
+          <Copy size={13} aria-hidden="true" />
+          Copy
+        </button>
+      </div>
       {attachments.length ? (
         <div className="playground-message-attachments">
           {attachments.map((attachment) => (
@@ -572,13 +609,28 @@ function PlaygroundMessage({
           ))}
         </div>
       ) : null}
-      <MessagePrimitive.Parts components={{ Text: RawTextPart }} />
+      {rawText ? <PlaygroundMarkdown text={rawText} /> : null}
     </MessagePrimitive.Root>
   );
 }
 
-function RawTextPart() {
-  return <MessagePartPrimitive.Text smooth={false} component="span" className="playground-raw" />;
+function PlaygroundMarkdown({ text }: { text: string }) {
+  return (
+    <div className="playground-markdown">
+      <ReactMarkdown
+        remarkPlugins={PLAYGROUND_MARKDOWN_PLUGINS}
+        components={{
+          a: ({ children, href }: { children?: ReactNode; href?: string }) => (
+            <a href={href} target="_blank" rel="noreferrer">
+              {children}
+            </a>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 function AttachmentChip({

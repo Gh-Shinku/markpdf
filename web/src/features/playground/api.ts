@@ -1,4 +1,4 @@
-import { requestJson } from "../../api";
+import { parseError, requestJson } from "../../api";
 
 export type RenderedPdfPage = {
   project_id: string;
@@ -68,6 +68,9 @@ export type PlaygroundChatSendResponse = PlaygroundChatSessionResponse & {
     created_at?: string;
   };
 };
+
+export type PlaygroundChatStreamEvent =
+  { type: "delta"; text: string } | { type: "final"; response: PlaygroundChatSendResponse };
 
 export const playgroundKeys = {
   renderedPage: (projectId: string, page: number) =>
@@ -198,6 +201,67 @@ export function sendPlaygroundChatMessage(
   ).then((response) => ({ ...normalizeChatSessionResponse(response), message: response.message }));
 }
 
+export async function* streamPlaygroundChatMessage(
+  chatId: string,
+  providerId: string,
+  message: PlaygroundChatMessage,
+  signal?: AbortSignal,
+): AsyncGenerator<PlaygroundChatStreamEvent, void> {
+  const response = await fetch(
+    `/api/playground/chats/${encodeURIComponent(chatId)}/messages/stream`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal,
+      body: JSON.stringify({
+        provider_id: providerId,
+        message: {
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          attachments:
+            message.attachments?.map((attachment) => ({
+              type: attachment.type,
+              project_id: attachment.project_id,
+              page: attachment.page,
+              dpi: attachment.dpi,
+              sha256: attachment.sha256,
+            })) ?? [],
+        },
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  if (!response.body) {
+    throw new Error("Streaming response did not include a body");
+  }
+
+  const decoder = new TextDecoder();
+  const reader = response.body.getReader();
+  let buffer = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = consumeSseEvents(buffer);
+      buffer = events.remainder;
+      for (const event of events.items) {
+        yield normalizePlaygroundStreamEvent(event);
+      }
+    }
+    buffer += decoder.decode();
+    const events = consumeSseEvents(`${buffer}\n\n`);
+    for (const event of events.items) {
+      yield normalizePlaygroundStreamEvent(event);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 function normalizeChatSessionResponse(
   response: PlaygroundChatSessionResponse,
 ): PlaygroundChatSessionResponse {
@@ -220,4 +284,53 @@ function normalizeChatSession(chat: PlaygroundChatSession): PlaygroundChatSessio
         })) ?? [],
     })),
   };
+}
+
+type RawSseEvent = {
+  event: string;
+  data: string;
+};
+
+function consumeSseEvents(input: string): { items: RawSseEvent[]; remainder: string } {
+  const normalized = input.replace(/\r\n/g, "\n");
+  const parts = normalized.split("\n\n");
+  const remainder = parts.pop() ?? "";
+  return {
+    remainder,
+    items: parts.map(parseSseEvent).filter((event) => event.data),
+  };
+}
+
+function parseSseEvent(block: string): RawSseEvent {
+  let event = "message";
+  const dataLines: string[] = [];
+  for (const line of block.split("\n")) {
+    if (!line || line.startsWith(":")) continue;
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trimStart());
+    }
+  }
+  return { event, data: dataLines.join("\n") };
+}
+
+function normalizePlaygroundStreamEvent(event: RawSseEvent): PlaygroundChatStreamEvent {
+  const data = JSON.parse(event.data) as Record<string, unknown>;
+  if (event.event === "delta") {
+    return { type: "delta", text: String(data.text ?? "") };
+  }
+  if (event.event === "final") {
+    return {
+      type: "final",
+      response: {
+        ...normalizeChatSessionResponse(data as PlaygroundChatSessionResponse),
+        message: (data as PlaygroundChatSendResponse).message,
+      },
+    };
+  }
+  if (event.event === "error") {
+    throw new Error(String(data.detail ?? "Streaming request failed"));
+  }
+  throw new Error(`Unsupported playground stream event: ${event.event}`);
 }
