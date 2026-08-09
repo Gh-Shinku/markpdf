@@ -11,6 +11,9 @@
 
 - Work in `web/` for frontend changes.
 - Use `npm run check` before finalizing frontend work when practical.
+- Do not add explanatory annotation text in the frontend to justify or describe
+  interaction mechanics. Make behavior clear through controls, labels, and
+  state instead.
 
 ## Server
 
