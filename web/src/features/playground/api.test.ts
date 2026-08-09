@@ -11,7 +11,9 @@ describe("streamPlaygroundChatMessage", () => {
       "fetch",
       vi.fn(async () =>
         streamResponse([
+          sse("thinking", { text: "thinking..." }),
           sse("delta", { text: "hello" }),
+          sse("warning", { detail: "fallback" }),
           sse("delta", { text: " world" }),
           sse("final", finalPayload()),
         ]),
@@ -28,9 +30,11 @@ describe("streamPlaygroundChatMessage", () => {
       events.push(event);
     }
 
-    expect(events[0]).toEqual({ type: "delta", text: "hello" });
-    expect(events[1]).toEqual({ type: "delta", text: " world" });
-    expect(events[2]).toMatchObject({
+    expect(events[0]).toEqual({ type: "thinking", text: "thinking..." });
+    expect(events[1]).toEqual({ type: "delta", text: "hello" });
+    expect(events[2]).toEqual({ type: "warning", detail: "fallback" });
+    expect(events[3]).toEqual({ type: "delta", text: " world" });
+    expect(events[4]).toMatchObject({
       type: "final",
       response: { message: { role: "assistant", content: "hello world" } },
     });

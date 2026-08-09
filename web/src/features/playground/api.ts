@@ -67,10 +67,14 @@ export type PlaygroundChatSendResponse = PlaygroundChatSessionResponse & {
     content: string;
     created_at?: string;
   };
+  warnings?: string[];
 };
 
 export type PlaygroundChatStreamEvent =
-  { type: "delta"; text: string } | { type: "final"; response: PlaygroundChatSendResponse };
+  | { type: "delta"; text: string }
+  | { type: "thinking"; text: string }
+  | { type: "warning"; detail: string }
+  | { type: "final"; response: PlaygroundChatSendResponse };
 
 export const playgroundKeys = {
   renderedPage: (projectId: string, page: number) =>
@@ -320,12 +324,19 @@ function normalizePlaygroundStreamEvent(event: RawSseEvent): PlaygroundChatStrea
   if (event.event === "delta") {
     return { type: "delta", text: String(data.text ?? "") };
   }
+  if (event.event === "thinking") {
+    return { type: "thinking", text: String(data.text ?? "") };
+  }
+  if (event.event === "warning") {
+    return { type: "warning", detail: String(data.detail ?? "") };
+  }
   if (event.event === "final") {
     return {
       type: "final",
       response: {
         ...normalizeChatSessionResponse(data as PlaygroundChatSessionResponse),
         message: (data as PlaygroundChatSendResponse).message,
+        warnings: (data as PlaygroundChatSendResponse).warnings,
       },
     };
   }

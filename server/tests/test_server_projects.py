@@ -261,6 +261,108 @@ def _save_verified_provider() -> str:
     return provider_id
 
 
+def test_provider_sampling_and_qwen_thinking_options_are_used(monkeypatch) -> None:
+    response = client.put(
+        "/api/settings/providers",
+        json={
+            "providers": [
+                {
+                    "name": "Qwen",
+                    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    "model": "qwen3-vl-flash",
+                    "api_key": "secret",
+                    "sampling": {"temperature": 0.3, "top_p": 0.8},
+                    "thinking_mode": "on",
+                    "extra_body": {"trace_id": "abc"},
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    provider = response.json()["providers"][0]
+    assert provider["sampling"] == {"temperature": 0.3, "top_p": 0.8}
+    assert provider["thinking_mode"] == "on"
+    projects_route.store.record_provider_verification(provider["id"], "verified", "Vision test passed")
+    captured: dict[str, Any] = {}
+
+    def fake_request_chat_from_vlm(messages, api_key, base_url, model, **kwargs):
+        captured.update(kwargs["completion_options"])
+        return "ok"
+
+    monkeypatch.setattr(projects_route, "request_chat_from_vlm", fake_request_chat_from_vlm)
+    chat_response = client.post(
+        "/api/playground/chat",
+        json={"provider_id": provider["id"], "messages": [{"role": "user", "content": "prompt"}]},
+    )
+
+    assert chat_response.status_code == 200
+    assert captured["temperature"] == 0.3
+    assert captured["top_p"] == 0.8
+    assert captured["extra_body"] == {"enable_thinking": True, "trace_id": "abc"}
+
+
+def test_provider_request_options_preserve_verification() -> None:
+    provider_id = _save_verified_provider()
+
+    response = client.put(
+        "/api/settings/providers",
+        json={
+            "providers": [
+                {
+                    "id": provider_id,
+                    "name": "Test VLM",
+                    "base_url": "https://example.test/v1",
+                    "model": "model-a",
+                    "sampling": {"temperature": 0.2},
+                    "thinking_mode": "off",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    provider = response.json()["providers"][0]
+    assert provider["verification_status"] == "verified"
+    assert provider["thinking_mode"] == "off"
+    assert provider["sampling"] == {"temperature": 0.2}
+
+
+def test_unsupported_thinking_mode_warns_and_omits_extra_body(monkeypatch) -> None:
+    response = client.put(
+        "/api/settings/providers",
+        json={
+            "providers": [
+                {
+                    "name": "Unknown",
+                    "base_url": "https://example.test/v1",
+                    "model": "model-a",
+                    "api_key": "secret",
+                    "thinking_mode": "off",
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    provider = response.json()["providers"][0]
+    projects_route.store.record_provider_verification(provider["id"], "verified", "Vision test passed")
+    captured: dict[str, Any] = {}
+
+    def fake_request_chat_from_vlm(messages, api_key, base_url, model, **kwargs):
+        captured.update(kwargs["completion_options"])
+        return "ok"
+
+    monkeypatch.setattr(projects_route, "request_chat_from_vlm", fake_request_chat_from_vlm)
+    chat_response = client.post(
+        "/api/playground/chat",
+        json={"provider_id": provider["id"], "messages": [{"role": "user", "content": "prompt"}]},
+    )
+
+    assert chat_response.status_code == 200
+    assert chat_response.json()["warnings"]
+    assert "extra_body" not in captured
+    assert "reasoning_effort" not in captured
+
+
 def test_generate_toc_creates_candidate_file(tmp_path, monkeypatch) -> None:
     project = _create_project(tmp_path, page_count=3)
     provider_id = _save_verified_provider()
@@ -569,7 +671,7 @@ def test_playground_chat_sends_text_and_pdf_page_attachment(tmp_path, monkeypatc
     rendered = client.get(f"/api/projects/{project['id']}/rendered-pages/1").json()
     captured: dict[str, Any] = {}
 
-    def fake_request_chat_from_vlm(messages, api_key, base_url, model):
+    def fake_request_chat_from_vlm(messages, api_key, base_url, model, **kwargs):
         captured["messages"] = messages
         captured["api_key"] = api_key
         captured["base_url"] = base_url
@@ -615,7 +717,7 @@ def test_playground_chat_sessions_save_history_but_send_only_current_message(mon
     provider_id = _save_verified_provider()
     captured_calls: list[list[dict[str, Any]]] = []
 
-    def fake_request_chat_from_vlm(messages, api_key, base_url, model):
+    def fake_request_chat_from_vlm(messages, api_key, base_url, model, **kwargs):
         captured_calls.append(messages)
         return f"answer {len(captured_calls)}"
 
@@ -658,7 +760,7 @@ def test_playground_chat_stream_sends_deltas_and_saves_history(monkeypatch) -> N
     provider_id = _save_verified_provider()
     captured: dict[str, Any] = {}
 
-    def fake_request_chat_from_vlm_stream(messages, api_key, base_url, model):
+    def fake_request_chat_from_vlm_stream(messages, api_key, base_url, model, **kwargs):
         captured["messages"] = messages
         yield "hello"
         yield " world"
@@ -688,10 +790,82 @@ def test_playground_chat_stream_sends_deltas_and_saves_history(monkeypatch) -> N
     ]
 
 
+def test_playground_chat_stream_sends_thinking_without_saving_it(monkeypatch) -> None:
+    provider_id = _save_verified_provider()
+
+    def fake_request_chat_from_vlm_stream(messages, api_key, base_url, model, **kwargs):
+        yield {"type": "thinking", "text": "reasoning"}
+        yield {"type": "content", "text": "answer"}
+
+    monkeypatch.setattr(projects_route, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
+    create_response = client.post("/api/playground/chats", json={"provider_id": provider_id})
+    chat_id = create_response.json()["chat"]["id"]
+
+    response = client.post(
+        f"/api/playground/chats/{chat_id}/messages/stream",
+        json={
+            "provider_id": provider_id,
+            "message": {"id": "user-stream", "role": "user", "content": "current prompt", "attachments": []},
+        },
+    )
+
+    assert response.status_code == 200
+    assert "event: thinking\ndata: {\"text\": \"reasoning\"}" in response.text
+    assert "event: delta\ndata: {\"text\": \"answer\"}" in response.text
+    chat_response = client.get(f"/api/playground/chats/{chat_id}")
+    assert [message["content"] for message in chat_response.json()["chat"]["messages"]] == [
+        "current prompt",
+        "answer",
+    ]
+
+
+def test_playground_chat_stream_suppresses_thinking_when_provider_is_off(monkeypatch) -> None:
+    response = client.put(
+        "/api/settings/providers",
+        json={
+            "providers": [
+                {
+                    "name": "Qwen",
+                    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    "model": "qwen3.7-flash",
+                    "api_key": "secret",
+                    "thinking_mode": "off",
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    provider = response.json()["providers"][0]
+    projects_route.store.record_provider_verification(provider["id"], "verified", "Vision test passed")
+    captured: dict[str, Any] = {}
+
+    def fake_request_chat_from_vlm_stream(messages, api_key, base_url, model, **kwargs):
+        captured["completion_options"] = kwargs["completion_options"]
+        yield {"type": "thinking", "text": "reasoning"}
+        yield {"type": "content", "text": "answer"}
+
+    monkeypatch.setattr(projects_route, "request_chat_from_vlm_stream", fake_request_chat_from_vlm_stream)
+    create_response = client.post("/api/playground/chats", json={"provider_id": provider["id"]})
+    chat_id = create_response.json()["chat"]["id"]
+
+    stream_response = client.post(
+        f"/api/playground/chats/{chat_id}/messages/stream",
+        json={
+            "provider_id": provider["id"],
+            "message": {"id": "user-stream", "role": "user", "content": "current prompt", "attachments": []},
+        },
+    )
+
+    assert stream_response.status_code == 200
+    assert captured["completion_options"]["extra_body"] == {"enable_thinking": False}
+    assert "event: thinking" not in stream_response.text
+    assert "event: delta\ndata: {\"text\": \"answer\"}" in stream_response.text
+
+
 def test_playground_chat_stream_error_does_not_save_incomplete_history(monkeypatch) -> None:
     provider_id = _save_verified_provider()
 
-    def fake_request_chat_from_vlm_stream(messages, api_key, base_url, model):
+    def fake_request_chat_from_vlm_stream(messages, api_key, base_url, model, **kwargs):
         yield "partial"
         raise RuntimeError("stream failed")
 
@@ -747,7 +921,7 @@ def test_playground_chat_session_stores_pdf_page_attachment(tmp_path, monkeypatc
     provider_id = _save_verified_provider()
     rendered = client.get(f"/api/projects/{project['id']}/rendered-pages/1").json()
 
-    def fake_request_chat_from_vlm(messages, api_key, base_url, model):
+    def fake_request_chat_from_vlm(messages, api_key, base_url, model, **kwargs):
         return "raw vlm response"
 
     monkeypatch.setattr(projects_route, "request_chat_from_vlm", fake_request_chat_from_vlm)

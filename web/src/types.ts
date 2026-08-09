@@ -42,11 +42,25 @@ export type SettingsDraft = {
 
 export type VlmProviderStatus = "unverified" | "verified" | "failed";
 
+export type VlmSampling = {
+  temperature?: number | null;
+  top_p?: number | null;
+  max_tokens?: number | null;
+  presence_penalty?: number | null;
+  frequency_penalty?: number | null;
+  seed?: number | null;
+};
+
+export type VlmThinkingMode = "auto" | "on" | "off";
+
 export type VlmProvider = {
   id: string;
   name: string;
   base_url: string;
   model: string;
+  sampling: VlmSampling;
+  thinking_mode: VlmThinkingMode;
+  extra_body: Record<string, unknown> | null;
   has_api_key: boolean;
   api_key_hint: string;
   verification_status: VlmProviderStatus;
@@ -60,6 +74,9 @@ export type VlmProviderDraft = {
   baseUrl: string;
   model: string;
   apiKey: string;
+  sampling: Record<keyof VlmSampling, string>;
+  thinkingMode: VlmThinkingMode;
+  extraBody: string;
 };
 
 export type TocFile = {

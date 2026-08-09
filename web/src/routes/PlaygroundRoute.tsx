@@ -259,17 +259,28 @@ export function PlaygroundRoute() {
       if (!selectedProviderId) throw new Error("Select a verified VLM API first");
       if (!selectedChatId) throw new Error("Open a chat session first");
       let receivedFinalEvent = false;
+      const warningSet = new Set<string>();
+      const showWarning = (warning: string) => {
+        if (!warning || warningSet.has(warning)) return;
+        warningSet.add(warning);
+        toast.warning(warning);
+      };
       for await (const event of streamPlaygroundChatMessage(
         selectedChatId,
         selectedProviderId,
         message,
         signal,
       )) {
-        if (event.type === "delta") {
+        if (event.type === "delta" || event.type === "thinking") {
           yield event.text;
           continue;
         }
+        if (event.type === "warning") {
+          showWarning(event.detail);
+          continue;
+        }
         receivedFinalEvent = true;
+        event.response.warnings?.forEach(showWarning);
         cacheChatSession(event.response);
         const nextAttachments = attachmentsByMessageIdFromChat(event.response.chat);
         sentAttachmentsByMessageIdRef.current = nextAttachments;

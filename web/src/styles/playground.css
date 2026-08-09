@@ -290,7 +290,9 @@
 .playground-message {
   display: grid;
   gap: 8px;
+  min-width: 0;
   max-width: min(760px, 92%);
+  overflow: clip visible;
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -348,9 +350,12 @@
 }
 
 .playground-markdown {
+  min-width: 0;
+  max-width: 100%;
   color: var(--text);
   font-size: 13px;
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .playground-markdown > :first-child {
@@ -380,19 +385,23 @@
   background: color-mix(in srgb, var(--text) 8%, transparent);
   font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .playground-markdown pre {
-  overflow: auto;
+  max-width: 100%;
+  overflow: auto visible;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
+  white-space: pre-wrap;
 }
 
 .playground-markdown pre code {
   padding: 0;
   background: transparent;
+  white-space: pre-wrap;
 }
 
 .playground-markdown table {
@@ -603,7 +612,7 @@
   font: inherit;
   font-size: 13px;
   line-height: 1.45;
-  resize: vertical;
+  resize: none;
 }
 
 .playground-composer-input:focus {

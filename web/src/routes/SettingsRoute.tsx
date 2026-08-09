@@ -13,7 +13,34 @@ import {
   settingsKey,
   testProvider,
 } from "../features/settings/api";
-import type { VlmProviderDraft } from "../types";
+import type { VlmProvider, VlmProviderDraft } from "../types";
+
+const emptySamplingDraft = (): VlmProviderDraft["sampling"] => ({
+  temperature: "",
+  top_p: "",
+  max_tokens: "",
+  presence_penalty: "",
+  frequency_penalty: "",
+  seed: "",
+});
+
+function providerToDraft(item: VlmProvider): VlmProviderDraft {
+  const sampling = emptySamplingDraft();
+  for (const key of Object.keys(sampling) as (keyof typeof sampling)[]) {
+    const value = item.sampling?.[key];
+    sampling[key] = value === null || value === undefined ? "" : String(value);
+  }
+  return {
+    id: item.id,
+    name: item.name,
+    baseUrl: item.base_url,
+    model: item.model,
+    apiKey: "",
+    sampling,
+    thinkingMode: item.thinking_mode ?? "auto",
+    extraBody: item.extra_body ? JSON.stringify(item.extra_body, null, 2) : "",
+  };
+}
 
 export function SettingsRoute() {
   const navigate = useNavigate();
@@ -25,16 +52,7 @@ export function SettingsRoute() {
   const [drafts, setDrafts] = useState<VlmProviderDraft[]>([]);
   const [promptDraft, setPromptDraft] = useState<string>("");
   useEffect(() => {
-    if (providersQuery.data)
-      setDrafts(
-        providersQuery.data.map((item) => ({
-          id: item.id,
-          name: item.name,
-          baseUrl: item.base_url,
-          model: item.model,
-          apiKey: "",
-        })),
-      );
+    if (providersQuery.data) setDrafts(providersQuery.data.map(providerToDraft));
   }, [providersQuery.data]);
   useEffect(() => {
     if (promptsQuery.data) setPromptDraft(promptsQuery.data.prompt);
@@ -48,17 +66,17 @@ export function SettingsRoute() {
     onSuccess: ({ providers, promptsResponse }) => {
       queryClient.setQueryData(settingsKey, providers);
       queryClient.setQueryData(promptsKey, promptsResponse);
-      setDrafts(
-        providers.map((item) => ({
-          id: item.id,
-          name: item.name,
-          baseUrl: item.base_url,
-          model: item.model,
-          apiKey: "",
-        })),
-      );
+      setDrafts(providers.map(providerToDraft));
       setPromptDraft(promptsResponse.prompt);
       toast.success("Settings saved");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const saveProvidersMutation = useMutation({
+    mutationFn: saveProviders,
+    onSuccess: (providers) => {
+      queryClient.setQueryData(settingsKey, providers);
+      setDrafts(providers.map(providerToDraft));
     },
     onError: (error) => toast.error(error.message),
   });
@@ -92,6 +110,7 @@ export function SettingsRoute() {
       onOpenPlayground={() => navigate("/playground")}
       onOpenDocs={() => navigate("/docs")}
       onSave={() => saveMutation.mutate()}
+      onProvidersSave={(nextDrafts) => saveProvidersMutation.mutate(nextDrafts)}
       onTest={(id) => testMutation.mutate(id)}
     />
   );

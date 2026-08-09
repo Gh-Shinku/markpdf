@@ -414,6 +414,9 @@ class ProjectStore:
                 str(item.get("base_url") or "").strip(),
                 str(item.get("model") or "").strip(),
                 api_key,
+                sampling=item.get("sampling") if isinstance(item.get("sampling"), dict) else None,
+                thinking_mode=str(item.get("thinking_mode") or "auto"),
+                extra_body=item.get("extra_body") if isinstance(item.get("extra_body"), dict) else None,
             )
             if previous and self._provider_connection(previous) == self._provider_connection(provider):
                 provider.update({key: previous.get(key) for key in ("verification_status", "verification_message", "verified_at")})
@@ -537,22 +540,71 @@ class ProjectStore:
             raise KeyError(toc_file_id)
         return self._project_dir(project_id) / "toc_candidates" / f"{toc_file_id}.json"
 
-    def _provider_record(self, provider_id: str, name: str, base_url: str, model: str, api_key: str) -> dict[str, Any]:
-        return {"id": provider_id, "name": name, "base_url": base_url, "model": model, "api_key": api_key, "verification_status": "unverified", "verification_message": "Not tested", "verified_at": None}
+    def _provider_record(
+        self,
+        provider_id: str,
+        name: str,
+        base_url: str,
+        model: str,
+        api_key: str,
+        sampling: dict[str, Any] | None = None,
+        thinking_mode: str | None = None,
+        extra_body: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "id": provider_id,
+            "name": name,
+            "base_url": base_url,
+            "model": model,
+            "api_key": api_key,
+            "sampling": self._normalize_provider_sampling(sampling),
+            "thinking_mode": thinking_mode if thinking_mode in {"auto", "on", "off"} else "auto",
+            "extra_body": extra_body if isinstance(extra_body, dict) and extra_body else None,
+            "verification_status": "unverified",
+            "verification_message": "Not tested",
+            "verified_at": None,
+        }
 
     def _normalize_provider(self, item: dict[str, Any], index: int) -> dict[str, Any]:
-        provider = self._provider_record(str(item.get("id") or uuid4().hex), str(item.get("name") or item.get("model") or f"VLM API {index + 1}"), str(item.get("base_url") or ""), str(item.get("model") or ""), str(item.get("api_key") or ""))
+        provider = self._provider_record(
+            str(item.get("id") or uuid4().hex),
+            str(item.get("name") or item.get("model") or f"VLM API {index + 1}"),
+            str(item.get("base_url") or ""),
+            str(item.get("model") or ""),
+            str(item.get("api_key") or ""),
+            sampling=item.get("sampling") if isinstance(item.get("sampling"), dict) else None,
+            thinking_mode=str(item.get("thinking_mode") or "auto"),
+            extra_body=item.get("extra_body") if isinstance(item.get("extra_body"), dict) else None,
+        )
         provider.update({key: item.get(key) for key in ("verification_status", "verification_message", "verified_at") if key in item})
         return provider
 
     def _provider_connection(self, provider: dict[str, Any]) -> tuple[str, str, str]:
-        return (str(provider.get("base_url") or ""), str(provider.get("model") or ""), str(provider.get("api_key") or ""))
+        return (
+            str(provider.get("base_url") or ""),
+            str(provider.get("model") or ""),
+            str(provider.get("api_key") or ""),
+        )
 
     def _public_provider(self, provider: dict[str, Any]) -> dict[str, Any]:
         public = {key: value for key, value in provider.items() if key != "api_key"}
         api_key = str(provider.get("api_key") or "")
         public.update({"has_api_key": bool(api_key), "api_key_hint": self._api_key_hint(api_key)})
         return public
+
+    def _normalize_provider_sampling(self, sampling: dict[str, Any] | None) -> dict[str, Any]:
+        source = sampling if isinstance(sampling, dict) else {"temperature": 0}
+        normalized: dict[str, Any] = {}
+        for key in ("temperature", "top_p", "max_tokens", "presence_penalty", "frequency_penalty", "seed"):
+            value = source.get(key)
+            if value is not None:
+                try:
+                    normalized[key] = int(value) if key in {"max_tokens", "seed"} else float(value)
+                except (TypeError, ValueError):
+                    continue
+        if not normalized:
+            normalized["temperature"] = 0
+        return normalized
 
     def _project_dir(self, project_id: str) -> Path:
         return self.projects_dir / project_id

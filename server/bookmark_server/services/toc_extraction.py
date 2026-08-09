@@ -72,6 +72,20 @@ FlatPageEventCallback = Callable[
     None,
 ]
 
+SAMPLING_FIELDS = {
+    "temperature",
+    "top_p",
+    "max_tokens",
+    "presence_penalty",
+    "frequency_penalty",
+    "seed",
+}
+DEFAULT_SAMPLING = {"temperature": 0}
+THINKING_WARNING = (
+    "Thinking mode is not mapped for this VLM API; using the API default behavior. "
+    "Set extra_body on the API configuration to pass provider-specific thinking parameters."
+)
+
 
 def prune_null_page_nodes(toc_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     def walk(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -96,22 +110,87 @@ def prune_null_page_nodes(toc_data: list[dict[str, Any]]) -> list[dict[str, Any]
     return walk(toc_data)
 
 
+def build_chat_completion_options(
+    *,
+    base_url: str,
+    model: str,
+    sampling: dict[str, Any] | None = None,
+    thinking_mode: str | None = None,
+    extra_body: dict[str, Any] | None = None,
+    stream: bool = False,
+) -> tuple[dict[str, Any], list[str]]:
+    options: dict[str, Any] = {"model": model}
+    warnings: list[str] = []
+    for key, value in (sampling or DEFAULT_SAMPLING).items():
+        if key in SAMPLING_FIELDS and value is not None:
+            options[key] = value
+    if stream:
+        options["stream"] = True
+
+    mode = (thinking_mode or "auto").strip().lower()
+    user_extra_body = dict(extra_body or {})
+    generated_extra_body: dict[str, Any] = {}
+    if mode in {"on", "off"}:
+        if _is_qwen_provider(base_url, model):
+            generated_extra_body["enable_thinking"] = mode == "on"
+        elif _is_openai_reasoning_provider(base_url, model):
+            options["reasoning_effort"] = "medium" if mode == "on" else "none"
+        elif not user_extra_body:
+            warnings.append(THINKING_WARNING)
+
+    merged_extra_body = {**generated_extra_body, **user_extra_body}
+    if merged_extra_body:
+        options["extra_body"] = merged_extra_body
+    return options, warnings
+
+
+def llm_request_profile(
+    *,
+    base_url: str,
+    model: str,
+    sampling: dict[str, Any] | None = None,
+    thinking_mode: str | None = None,
+    extra_body: dict[str, Any] | None = None,
+) -> str:
+    options, _warnings = build_chat_completion_options(
+        base_url=base_url,
+        model=model,
+        sampling=sampling,
+        thinking_mode=thinking_mode,
+        extra_body=extra_body,
+    )
+    return json.dumps(options, ensure_ascii=True, sort_keys=True, default=str)
+
+
+def _is_qwen_provider(base_url: str, model: str) -> bool:
+    haystack = f"{base_url} {model}".lower()
+    return "dashscope.aliyuncs.com" in haystack or "qwen" in haystack or "qwq" in haystack
+
+
+def _is_openai_reasoning_provider(base_url: str, model: str) -> bool:
+    haystack = f"{base_url} {model}".lower()
+    if "openai.azure.com" not in haystack and "api.openai.com" not in haystack:
+        return False
+    return model.lower().startswith(("o1", "o3", "o4", "gpt-5"))
+
+
 def request_toc_from_vlm(
     image_data_urls: list[str],
     prompt: str,
     api_key: str,
     base_url: str,
     model: str,
+    completion_options: dict[str, Any] | None = None,
 ) -> str:
     client = OpenAI(api_key=api_key, base_url=base_url)
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
     for data_url in image_data_urls:
         content.append({"type": "image_url", "image_url": {"url": data_url}})
 
+    options = {"model": model, "temperature": 0, **(completion_options or {})}
     completion = client.chat.completions.create(
-        model=model,
         messages=[{"role": "user", "content": content}],
-        temperature=0,
+        **options,
     )
 
     return _read_completion_text(completion.choices[0].message.content)
@@ -122,12 +201,13 @@ def request_chat_from_vlm(
     api_key: str,
     base_url: str,
     model: str,
+    completion_options: dict[str, Any] | None = None,
 ) -> str:
     client = OpenAI(api_key=api_key, base_url=base_url)
+    options = {"model": model, "temperature": 0, **(completion_options or {})}
     completion = client.chat.completions.create(
-        model=model,
         messages=messages,
-        temperature=0,
+        **options,
     )
     return _read_completion_text(completion.choices[0].message.content)
 
@@ -137,22 +217,25 @@ def request_chat_from_vlm_stream(
     api_key: str,
     base_url: str,
     model: str,
+    completion_options: dict[str, Any] | None = None,
 ):
     client = OpenAI(api_key=api_key, base_url=base_url)
+    options = {"model": model, "temperature": 0, "stream": True, **(completion_options or {})}
     stream = client.chat.completions.create(
-        model=model,
         messages=messages,
-        temperature=0,
-        stream=True,
+        **options,
     )
     for chunk in stream:
         choices = getattr(chunk, "choices", None) or []
         if not choices:
             continue
         delta = getattr(choices[0], "delta", None)
+        reasoning_text = _read_completion_delta_text(_read_delta_field(delta, "reasoning_content"))
+        if reasoning_text:
+            yield {"type": "thinking", "text": reasoning_text}
         text = _read_completion_delta_text(getattr(delta, "content", None))
         if text:
-            yield text
+            yield {"type": "content", "text": text}
 
 
 def _read_completion_text(message_content: Any) -> str:
@@ -186,6 +269,18 @@ def _read_completion_delta_text(delta_content: Any) -> str:
         return "".join(chunks)
 
     return ""
+
+
+def _read_delta_field(delta: Any, field: str) -> Any:
+    value = getattr(delta, field, None)
+    if value is not None:
+        return value
+    model_extra = getattr(delta, "model_extra", None)
+    if isinstance(model_extra, dict):
+        return model_extra.get(field)
+    if isinstance(delta, dict):
+        return delta.get(field)
+    return None
 
 
 def render_pdf_page_image(
@@ -493,6 +588,7 @@ class FlatExtractor(BaseExtractor):
         api_key: str,
         base_url: str,
         model: str,
+        completion_options: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         raw_response = request_toc_from_vlm(
             image_data_urls=[image_data_url],
@@ -500,6 +596,7 @@ class FlatExtractor(BaseExtractor):
             api_key=api_key,
             base_url=base_url,
             model=model,
+            completion_options=completion_options,
         )
         json_text = extract_json_text(raw_response)
         parsed = json.loads(json_text)
@@ -577,13 +674,14 @@ def request_llm_json(
     api_key: str,
     base_url: str,
     model: str,
+    completion_options: dict[str, Any] | None = None,
 ) -> str:
     """Send a text-only prompt and return the raw text response."""
     client = OpenAI(api_key=api_key, base_url=base_url)
+    options = {"model": model, "temperature": 0, **(completion_options or {})}
     completion = client.chat.completions.create(
-        model=model,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0,
+        **options,
     )
 
     message_content = completion.choices[0].message.content
@@ -625,6 +723,7 @@ def correct_tree_levels(
     api_key: str,
     base_url: str,
     model: str,
+    completion_options: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Ask the LLM to fix obvious hierarchy errors in the assembled tree.
 
@@ -638,6 +737,7 @@ def correct_tree_levels(
         api_key=api_key,
         base_url=base_url,
         model=model,
+        completion_options=completion_options,
     )
     parsed = json.loads(extract_json_text(raw_response))
     return validate_toc_json_structure(parsed)
@@ -652,6 +752,7 @@ def make_cache_file_path(
     model: str,
     mode: str,
     prompt: str,
+    request_profile: str = "",
 ) -> Path:
     stat = input_pdf.stat()
     key_data = {
@@ -664,6 +765,7 @@ def make_cache_file_path(
         "model": model,
         "mode": mode,
         "prompt": prompt,
+        "request_profile": request_profile,
     }
     digest = hashlib.sha256(
         json.dumps(key_data, ensure_ascii=True, sort_keys=True).encode("utf-8")
@@ -679,6 +781,7 @@ def make_flat_pages_work_dir(
     dpi: int,
     model: str,
     prompt: str,
+    request_profile: str = "",
 ) -> Path:
     key_data = {
         "input_pdf": str(input_pdf.resolve()),
@@ -688,6 +791,7 @@ def make_flat_pages_work_dir(
         "model": model,
         "mode": "flat-pages",
         "prompt": prompt,
+        "request_profile": request_profile,
     }
     digest = hashlib.sha256(
         json.dumps(key_data, ensure_ascii=True, sort_keys=True).encode("utf-8")
@@ -703,6 +807,7 @@ def find_matching_flat_raw_cache(
     model: str,
     dpi: int,
     prompt: str,
+    request_profile: str = "",
 ) -> Path | None:
     raw_files = sorted(cache_dir.glob("flat_raw_*.json"), reverse=True)
     input_pdf_resolved = str(input_pdf.resolve())
@@ -721,6 +826,8 @@ def find_matching_flat_raw_cache(
         if data.get("toc_start") != toc_start or data.get("toc_end") != toc_end:
             continue
         if data.get("model") != model or data.get("dpi") != dpi:
+            continue
+        if data.get("request_profile", "") != request_profile:
             continue
 
         # Legacy records (created before prompts were configurable) have no
@@ -765,6 +872,9 @@ def extract_toc_json(
     rescan: bool = False,
     rescan_pages: list[int] | None = None,
     prompt: str | None = None,
+    sampling: dict[str, Any] | None = None,
+    thinking_mode: str | None = None,
+    extra_body: dict[str, Any] | None = None,
     on_page_rendered: Callable[[int, int], None] | None = None,
     on_flat_page_event: FlatPageEventCallback | None = None,
 ) -> tuple[list[dict[str, Any]], Path, bool, Path | None, dict[str, Any]]:
@@ -775,6 +885,20 @@ def extract_toc_json(
         pdf_name=input_pdf.stem,
     )
     rendered_prompt = extractor.build_prompt()
+    completion_options, warnings = build_chat_completion_options(
+        base_url=base_url,
+        model=model,
+        sampling=sampling,
+        thinking_mode=thinking_mode,
+        extra_body=extra_body,
+    )
+    request_profile = llm_request_profile(
+        base_url=base_url,
+        model=model,
+        sampling=sampling,
+        thinking_mode=thinking_mode,
+        extra_body=extra_body,
+    )
 
     stats: dict[str, Any] = {
         "vlm_calls": 0,
@@ -782,6 +906,7 @@ def extract_toc_json(
         "api_seconds": 0.0,
         "cache_pages": 0,
         "vlm_pages": 0,
+        "warnings": warnings,
     }
 
     cache_file = make_cache_file_path(
@@ -793,6 +918,7 @@ def extract_toc_json(
         model=model,
         mode=extractor.mode,
         prompt=rendered_prompt,
+        request_profile=request_profile,
     )
 
     # Priority 1: final TOC cache.
@@ -811,6 +937,7 @@ def extract_toc_json(
         dpi=dpi,
         model=model,
         prompt=rendered_prompt,
+        request_profile=request_profile,
     )
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -829,6 +956,7 @@ def extract_toc_json(
             model=model,
             dpi=dpi,
             prompt=rendered_prompt,
+            request_profile=request_profile,
         )
         if fallback_raw is not None:
             raw_data = json.loads(fallback_raw.read_text(encoding="utf-8"))
@@ -921,6 +1049,7 @@ def extract_toc_json(
                     api_key=api_key,
                     base_url=base_url,
                     model=model,
+                    completion_options=completion_options,
                 )
                 api_elapsed = datetime.now().timestamp() - api_start
                 stats["api_seconds"] += api_elapsed
@@ -981,6 +1110,7 @@ def extract_toc_json(
             api_key=api_key,
             base_url=base_url,
             model=model,
+            completion_options=completion_options,
         )
         corrected = prune_null_page_nodes(corrected)
         stats["level_correction"] = "applied"
@@ -1006,6 +1136,7 @@ def extract_toc_json(
                 "model": model,
                 "dpi": dpi,
                 "prompt": rendered_prompt,
+                "request_profile": request_profile,
                 "work_dir": str(work_dir),
                 "pages": [
                     {

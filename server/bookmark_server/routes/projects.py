@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import fitz
 
 from ..core import apply_toc_to_pdf, inject_toc_page_bookmark
@@ -16,6 +16,7 @@ from ..services.generation_jobs import generation_job_store
 from ..services.projects import store, utc_now_iso
 from ..services.toc_extraction import (
     DEFAULT_FLAT_PROMPT,
+    build_chat_completion_options,
     extract_toc_json,
     render_pdf_page_image,
     request_chat_from_vlm,
@@ -67,12 +68,59 @@ class LlmSettingsPayload(BaseModel):
     api_key: str | None = None
 
 
+class SamplingPayload(BaseModel):
+    temperature: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
+    presence_penalty: float | None = None
+    frequency_penalty: float | None = None
+    seed: int | None = None
+
+    @field_validator("temperature")
+    @classmethod
+    def validate_temperature(cls, value: float | None) -> float | None:
+        if value is not None and not 0 <= value <= 2:
+            raise ValueError("temperature must be between 0 and 2")
+        return value
+
+    @field_validator("top_p")
+    @classmethod
+    def validate_top_p(cls, value: float | None) -> float | None:
+        if value is not None and not 0 <= value <= 1:
+            raise ValueError("top_p must be between 0 and 1")
+        return value
+
+    @field_validator("max_tokens")
+    @classmethod
+    def validate_max_tokens(cls, value: int | None) -> int | None:
+        if value is not None and value < 1:
+            raise ValueError("max_tokens must be >= 1")
+        return value
+
+    @field_validator("presence_penalty", "frequency_penalty")
+    @classmethod
+    def validate_penalty(cls, value: float | None) -> float | None:
+        if value is not None and not -2 <= value <= 2:
+            raise ValueError("penalties must be between -2 and 2")
+        return value
+
+
 class ProviderPayload(BaseModel):
     id: str | None = None
     name: str
     base_url: str
     model: str
     api_key: str | None = None
+    sampling: SamplingPayload | None = None
+    thinking_mode: str = "auto"
+    extra_body: dict[str, Any] | None = None
+
+    @field_validator("thinking_mode")
+    @classmethod
+    def validate_thinking_mode(cls, value: str) -> str:
+        if value not in {"auto", "on", "off"}:
+            raise ValueError("thinking_mode must be auto, on, or off")
+        return value
 
 
 class ProvidersPayload(BaseModel):
@@ -141,6 +189,17 @@ def _provider_or_400(provider_id: str) -> dict[str, Any]:
 
 def _provider_snapshot(provider: dict[str, Any]) -> dict[str, str]:
     return {key: str(provider.get(key) or "") for key in ("id", "name", "base_url", "model")}
+
+
+def _provider_completion_options(provider: dict[str, Any], *, stream: bool = False) -> tuple[dict[str, Any], list[str]]:
+    return build_chat_completion_options(
+        base_url=str(provider.get("base_url") or ""),
+        model=str(provider.get("model") or ""),
+        sampling=provider.get("sampling") if isinstance(provider.get("sampling"), dict) else None,
+        thinking_mode=str(provider.get("thinking_mode") or "auto"),
+        extra_body=provider.get("extra_body") if isinstance(provider.get("extra_body"), dict) else None,
+        stream=stream,
+    )
 
 
 def _playground_chat_or_404(chat_id: str) -> dict[str, Any]:
@@ -246,6 +305,17 @@ def _sse_event(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _playground_stream_chunk(chunk: Any) -> tuple[str, str]:
+    if isinstance(chunk, str):
+        return "content", chunk
+    if isinstance(chunk, dict):
+        kind = str(chunk.get("type") or "content")
+        if kind not in {"content", "thinking"}:
+            kind = "content"
+        return kind, str(chunk.get("text") or "")
+    return "content", str(chunk or "")
+
+
 def _validate_generation(project: dict[str, Any], payload: GeneratePayload) -> dict[str, Any]:
     if payload.toc_start < 1 or payload.toc_end < 1:
         raise HTTPException(status_code=400, detail="TOC page range must be one-based and >= 1")
@@ -325,6 +395,9 @@ def _run_generate_toc_job(
             cache_dir=store.cache_dir(),
             overwrite_cache=False,
             prompt=store.read_toc_prompt(),
+            sampling=settings.get("sampling") if isinstance(settings.get("sampling"), dict) else None,
+            thinking_mode=str(settings.get("thinking_mode") or "auto"),
+            extra_body=settings.get("extra_body") if isinstance(settings.get("extra_body"), dict) else None,
             on_flat_page_event=record_page_progress,
         )
         generation_job_store.update_progress(
@@ -764,7 +837,15 @@ def test_llm_provider(provider_id: str) -> dict[str, Any]:
         pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 128, 64), False)
         pixmap.clear_with(0x21A366)
         image_url = f"data:image/png;base64,{base64.b64encode(pixmap.tobytes('png')).decode('ascii')}"
-        response = request_toc_from_vlm([image_url], "Confirm that you can process the attached image. Reply with exactly VLM_OK.", str(provider["api_key"]), str(provider["base_url"]), str(provider["model"]))
+        completion_options, _warnings = _provider_completion_options(provider)
+        response = request_toc_from_vlm(
+            [image_url],
+            "Confirm that you can process the attached image. Reply with exactly VLM_OK.",
+            str(provider["api_key"]),
+            str(provider["base_url"]),
+            str(provider["model"]),
+            completion_options=completion_options,
+        )
         if "VLM_OK" not in response.upper():
             raise ValueError("The model did not return the expected visual test response")
     except Exception as exc:
@@ -830,12 +911,14 @@ def send_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessage
     provider = _provider_or_400(payload.provider_id)
     vlm_message, rendered_attachments = _playground_message_to_vlm(payload.message)
     stored_attachments: list[dict[str, Any]] = []
+    completion_options, warnings = _provider_completion_options(provider)
     try:
         content = request_chat_from_vlm(
             [vlm_message],
             api_key=str(provider["api_key"]),
             base_url=str(provider["base_url"]),
             model=str(provider["model"]),
+            completion_options=completion_options,
         )
         for rendered_attachment in rendered_attachments:
             attachment_url = store.save_playground_attachment(
@@ -860,7 +943,7 @@ def send_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessage
     )
     assistant_message = _stored_playground_message(role="assistant", content=content)
     chat = store.append_playground_exchange(chat_id, str(provider["id"]), user_message, assistant_message)
-    return {"chat": chat, "message": assistant_message, **store.list_playground_chats()}
+    return {"chat": chat, "message": assistant_message, "warnings": warnings, **store.list_playground_chats()}
 
 
 @router.post("/playground/chats/{chat_id}/messages/stream")
@@ -868,16 +951,28 @@ def stream_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessa
     _playground_chat_or_404(chat_id)
     provider = _provider_or_400(payload.provider_id)
     vlm_message, rendered_attachments = _playground_message_to_vlm(payload.message)
+    completion_options, warnings = _provider_completion_options(provider, stream=True)
+    show_thinking = str(provider.get("thinking_mode") or "auto").strip().lower() != "off"
 
     def stream_events():
         content_chunks: list[str] = []
         try:
-            for text in request_chat_from_vlm_stream(
+            for warning in warnings:
+                yield _sse_event("warning", {"detail": warning})
+            for chunk in request_chat_from_vlm_stream(
                 [vlm_message],
                 api_key=str(provider["api_key"]),
                 base_url=str(provider["base_url"]),
                 model=str(provider["model"]),
+                completion_options=completion_options,
             ):
+                kind, text = _playground_stream_chunk(chunk)
+                if not text:
+                    continue
+                if kind == "thinking":
+                    if show_thinking:
+                        yield _sse_event("thinking", {"text": text})
+                    continue
                 content_chunks.append(text)
                 yield _sse_event("delta", {"text": text})
 
@@ -901,7 +996,7 @@ def stream_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessa
             )
             assistant_message = _stored_playground_message(role="assistant", content="".join(content_chunks))
             chat = store.append_playground_exchange(chat_id, str(provider["id"]), user_message, assistant_message)
-            yield _sse_event("final", {"chat": chat, "message": assistant_message, **store.list_playground_chats()})
+            yield _sse_event("final", {"chat": chat, "message": assistant_message, "warnings": warnings, **store.list_playground_chats()})
         except Exception as exc:
             yield _sse_event("error", {"detail": str(exc)})
 
@@ -911,15 +1006,17 @@ def stream_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessa
 @router.post("/playground/chat")
 def run_playground_chat(payload: PlaygroundChatPayload) -> dict[str, Any]:
     provider = _provider_or_400(payload.provider_id)
+    completion_options, warnings = _provider_completion_options(provider)
     try:
         content = request_chat_from_vlm(
             _playground_messages(payload),
             api_key=str(provider["api_key"]),
             base_url=str(provider["base_url"]),
             model=str(provider["model"]),
+            completion_options=completion_options,
         )
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return {"message": {"role": "assistant", "content": content}}
+    return {"message": {"role": "assistant", "content": content}, "warnings": warnings}

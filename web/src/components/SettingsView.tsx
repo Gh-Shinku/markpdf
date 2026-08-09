@@ -1,6 +1,7 @@
 import { useState, type Dispatch, type DragEvent, type SetStateAction } from "react";
 import {
   ArrowLeft,
+  ChevronDown,
   GripVertical,
   Moon,
   Plus,
@@ -31,10 +32,69 @@ type SettingsViewProps = {
   onOpenPlayground: () => void;
   onOpenDocs: () => void;
   onSave: () => void;
+  onProvidersSave?: (drafts: VlmProviderDraft[]) => void;
   onTest: (providerId: string) => void;
 };
 
-const blankProvider = (): VlmProviderDraft => ({ name: "", baseUrl: "", model: "", apiKey: "" });
+const blankSampling = (): VlmProviderDraft["sampling"] => ({
+  temperature: "0",
+  top_p: "",
+  max_tokens: "",
+  presence_penalty: "",
+  frequency_penalty: "",
+  seed: "",
+});
+
+const blankProvider = (): VlmProviderDraft => ({
+  name: "",
+  baseUrl: "",
+  model: "",
+  apiKey: "",
+  sampling: blankSampling(),
+  thinkingMode: "auto",
+  extraBody: "",
+});
+
+const isNonDefaultNumber = (value: string, defaultValue?: number): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (defaultValue === undefined) return true;
+  const parsed = Number(trimmed);
+  return Number.isNaN(parsed) || parsed !== defaultValue;
+};
+
+const hasCustomSampling = (sampling: VlmProviderDraft["sampling"]): boolean =>
+  isNonDefaultNumber(sampling.temperature, 0) ||
+  isNonDefaultNumber(sampling.top_p) ||
+  isNonDefaultNumber(sampling.max_tokens) ||
+  isNonDefaultNumber(sampling.presence_penalty) ||
+  isNonDefaultNumber(sampling.frequency_penalty) ||
+  isNonDefaultNumber(sampling.seed);
+
+const getProviderChips = (provider: VlmProviderDraft): string[] => {
+  const chips: string[] = [];
+  if (provider.thinkingMode !== "auto") {
+    chips.push(`thinking:${provider.thinkingMode}`);
+  }
+  if (hasCustomSampling(provider.sampling)) {
+    chips.push("sampling");
+  }
+  if (provider.extraBody.trim()) {
+    chips.push("extra_body");
+  }
+  return chips;
+};
+
+const isValidExtraBody = (value: string): boolean => {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    return Boolean(parsed) && typeof parsed === "object" && !Array.isArray(parsed);
+  } catch {
+    return false;
+  }
+};
 
 export function SettingsView({
   providers,
@@ -52,10 +112,13 @@ export function SettingsView({
   onOpenPlayground,
   onOpenDocs,
   onSave,
+  onProvidersSave,
   onTest,
 }: SettingsViewProps) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [modalDraft, setModalDraft] = useState<VlmProviderDraft | null>(null);
+  const [modalError, setModalError] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   function reorder(from: number, to: number) {
     if (from === to) return;
@@ -74,18 +137,28 @@ export function SettingsView({
   function openAdd() {
     setEditingIndex(null);
     setModalDraft(blankProvider());
+    setModalError("");
+    setAdvancedOpen(false);
   }
   function openEdit(index: number) {
     setEditingIndex(index);
-    setModalDraft({ ...drafts[index] });
+    setModalDraft({ ...drafts[index], sampling: { ...drafts[index].sampling } });
+    setModalError("");
+    setAdvancedOpen(false);
   }
   function saveModal() {
     if (!modalDraft) return;
-    onProvidersChange((current) =>
+    if (!isValidExtraBody(modalDraft.extraBody)) {
+      setModalError("Extra body must be a JSON object");
+      setAdvancedOpen(true);
+      return;
+    }
+    const nextDrafts =
       editingIndex === null
-        ? [...current, modalDraft]
-        : current.map((item, index) => (index === editingIndex ? modalDraft : item)),
-    );
+        ? [...drafts, modalDraft]
+        : drafts.map((item, index) => (index === editingIndex ? modalDraft : item));
+    onProvidersChange(nextDrafts);
+    onProvidersSave?.(nextDrafts);
     setModalDraft(null);
   }
   function restorePrompt() {
@@ -168,6 +241,7 @@ export function SettingsView({
           <div className="provider-list">
             {drafts.map((draft, index) => {
               const provider = draft.id ? providers.find((item) => item.id === draft.id) : null;
+              const chips = getProviderChips(draft);
               return (
                 <article
                   className="provider-row"
@@ -187,7 +261,18 @@ export function SettingsView({
                   >
                     <GripVertical size={17} />
                   </button>
-                  <strong className="provider-name">{draft.name || "Untitled API"}</strong>
+                  <div className="provider-main">
+                    <strong className="provider-name">{draft.name || "Untitled API"}</strong>
+                    {chips.length ? (
+                      <div className="provider-chips" aria-label="API options">
+                        {chips.map((chip) => (
+                          <span className="provider-chip" key={chip}>
+                            {chip}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <div className="provider-actions">
                     <span
                       className={`provider-status ${provider?.verification_status ?? "unverified"}`}
@@ -263,7 +348,7 @@ export function SettingsView({
       {modalDraft ? (
         <div className="modal-backdrop" role="presentation">
           <section
-            className="modal"
+            className="modal provider-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="provider-title"
@@ -280,43 +365,157 @@ export function SettingsView({
               </button>
             </div>
             <div className="settings-form">
-              <label>
-                <span>API name</span>
-                <input
-                  value={modalDraft.name}
-                  onChange={(event) => setModalDraft({ ...modalDraft, name: event.target.value })}
-                />
-              </label>
-              <label>
-                <span>Base URL</span>
-                <input
-                  value={modalDraft.baseUrl}
-                  onChange={(event) =>
-                    setModalDraft({ ...modalDraft, baseUrl: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                <span>Model</span>
-                <input
-                  value={modalDraft.model}
-                  onChange={(event) => setModalDraft({ ...modalDraft, model: event.target.value })}
-                />
-              </label>
-              <label>
-                <span>API key</span>
-                <input
-                  type="password"
-                  value={modalDraft.apiKey}
-                  placeholder={
-                    editingIndex !== null &&
-                    providers.find((item) => item.id === drafts[editingIndex]?.id)?.has_api_key
-                      ? "Configured"
-                      : "API key"
-                  }
-                  onChange={(event) => setModalDraft({ ...modalDraft, apiKey: event.target.value })}
-                />
-              </label>
+              <div className="settings-form-basic">
+                <label>
+                  <span>API name</span>
+                  <input
+                    value={modalDraft.name}
+                    onChange={(event) => setModalDraft({ ...modalDraft, name: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Base URL</span>
+                  <input
+                    value={modalDraft.baseUrl}
+                    onChange={(event) =>
+                      setModalDraft({ ...modalDraft, baseUrl: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>Model</span>
+                  <input
+                    value={modalDraft.model}
+                    onChange={(event) =>
+                      setModalDraft({ ...modalDraft, model: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>API key</span>
+                  <input
+                    type="password"
+                    value={modalDraft.apiKey}
+                    placeholder={
+                      editingIndex !== null &&
+                      providers.find((item) => item.id === drafts[editingIndex]?.id)?.has_api_key
+                        ? "Configured"
+                        : "API key"
+                    }
+                    onChange={(event) =>
+                      setModalDraft({ ...modalDraft, apiKey: event.target.value })
+                    }
+                  />
+                </label>
+                <label className="settings-form-wide">
+                  <span>Thinking mode</span>
+                  <select
+                    value={modalDraft.thinkingMode}
+                    onChange={(event) =>
+                      setModalDraft({
+                        ...modalDraft,
+                        thinkingMode: event.target.value as VlmProviderDraft["thinkingMode"],
+                      })
+                    }
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="on">On</option>
+                    <option value="off">Off</option>
+                  </select>
+                </label>
+              </div>
+              <div className="settings-form-section">
+                <button
+                  className="settings-advanced-toggle"
+                  type="button"
+                  aria-expanded={advancedOpen}
+                  aria-controls="provider-advanced-options"
+                  onClick={() => setAdvancedOpen((current) => !current)}
+                >
+                  <span>Advanced</span>
+                  <ChevronDown size={16} aria-hidden="true" />
+                </button>
+                {advancedOpen ? (
+                  <div className="settings-advanced" id="provider-advanced-options">
+                    <div className="settings-form-compact-grid">
+                      <ProviderNumberField
+                        label="Temperature"
+                        value={modalDraft.sampling.temperature}
+                        onChange={(value) =>
+                          setModalDraft({
+                            ...modalDraft,
+                            sampling: { ...modalDraft.sampling, temperature: value },
+                          })
+                        }
+                      />
+                      <ProviderNumberField
+                        label="Top P"
+                        value={modalDraft.sampling.top_p}
+                        onChange={(value) =>
+                          setModalDraft({
+                            ...modalDraft,
+                            sampling: { ...modalDraft.sampling, top_p: value },
+                          })
+                        }
+                      />
+                      <ProviderNumberField
+                        label="Max tokens"
+                        value={modalDraft.sampling.max_tokens}
+                        step="1"
+                        onChange={(value) =>
+                          setModalDraft({
+                            ...modalDraft,
+                            sampling: { ...modalDraft.sampling, max_tokens: value },
+                          })
+                        }
+                      />
+                      <ProviderNumberField
+                        label="Presence penalty"
+                        value={modalDraft.sampling.presence_penalty}
+                        onChange={(value) =>
+                          setModalDraft({
+                            ...modalDraft,
+                            sampling: { ...modalDraft.sampling, presence_penalty: value },
+                          })
+                        }
+                      />
+                      <ProviderNumberField
+                        label="Frequency penalty"
+                        value={modalDraft.sampling.frequency_penalty}
+                        onChange={(value) =>
+                          setModalDraft({
+                            ...modalDraft,
+                            sampling: { ...modalDraft.sampling, frequency_penalty: value },
+                          })
+                        }
+                      />
+                      <ProviderNumberField
+                        label="Seed"
+                        value={modalDraft.sampling.seed}
+                        step="1"
+                        onChange={(value) =>
+                          setModalDraft({
+                            ...modalDraft,
+                            sampling: { ...modalDraft.sampling, seed: value },
+                          })
+                        }
+                      />
+                    </div>
+                    <label className="settings-form-wide">
+                      <span>Extra body</span>
+                      <textarea
+                        aria-invalid={Boolean(modalError)}
+                        value={modalDraft.extraBody}
+                        onChange={(event) => {
+                          setModalDraft({ ...modalDraft, extraBody: event.target.value });
+                          setModalError("");
+                        }}
+                      />
+                    </label>
+                    {modalError ? <div className="settings-form-error">{modalError}</div> : null}
+                  </div>
+                ) : null}
+              </div>
             </div>
             <div className="modal-actions">
               <button
@@ -341,5 +540,29 @@ export function SettingsView({
         </div>
       ) : null}
     </main>
+  );
+}
+
+function ProviderNumberField({
+  label,
+  value,
+  step = "0.1",
+  onChange,
+}: {
+  label: string;
+  value: string;
+  step?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label>
+      <span>{label}</span>
+      <input
+        type="number"
+        step={step}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
   );
 }

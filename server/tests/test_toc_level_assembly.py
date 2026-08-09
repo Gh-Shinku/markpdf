@@ -32,6 +32,12 @@ def _titles(nodes: list[dict[str, Any]]) -> list[str]:
     return result
 
 
+def test_stream_delta_field_reads_model_extra_reasoning_content() -> None:
+    delta = type("Delta", (), {"model_extra": {"reasoning_content": "thinking"}})()
+
+    assert te._read_delta_field(delta, "reasoning_content") == "thinking"
+
+
 class TestIndentLevelAssembly:
     def test_basic_indent_tree(self) -> None:
         tree = _tree_of(
@@ -322,7 +328,7 @@ class TestExtractionIntegration:
         ]
         call_index = [0]
 
-        def fake_vlm(image_data_urls, prompt, api_key, base_url, model):
+        def fake_vlm(image_data_urls, prompt, api_key, base_url, model, **kwargs):
             items = page_items[call_index[0]]
             call_index[0] += 1
             return json.dumps(items)
@@ -338,7 +344,7 @@ class TestExtractionIntegration:
             }
         ]
 
-        def fake_llm(prompt, api_key, base_url, model):
+        def fake_llm(prompt, api_key, base_url, model, **kwargs):
             assert "children" in prompt
             return json.dumps(corrected_tree)
 
@@ -388,7 +394,7 @@ class TestExtractionIntegration:
         ]
         call_index = [0]
 
-        def fake_vlm(image_data_urls, prompt, api_key, base_url, model):
+        def fake_vlm(image_data_urls, prompt, api_key, base_url, model, **kwargs):
             items = page_items[call_index[0]]
             call_index[0] += 1
             return json.dumps(items)
