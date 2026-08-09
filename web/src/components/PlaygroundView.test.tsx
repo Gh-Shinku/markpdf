@@ -78,6 +78,7 @@ function renderPlayground(overrides: Partial<Parameters<typeof PlaygroundView>[0
     prompt: "Extract TOC entries",
     selectedProjectId: project.id,
     selectedProviderId: provider.id,
+    selectedThinkingMode: "auto",
     pageNumber: "2",
     pendingAttachments: [],
     sentAttachmentsByMessageId: {},
@@ -87,6 +88,7 @@ function renderPlayground(overrides: Partial<Parameters<typeof PlaygroundView>[0
     onPromptChange: vi.fn(),
     onSelectedProjectChange: vi.fn(),
     onSelectedProviderChange: vi.fn(),
+    onSelectedThinkingModeChange: vi.fn(),
     onPageNumberChange: vi.fn(),
     onInsertRenderedPage: vi.fn(),
     onRemovePendingAttachment: vi.fn(),
@@ -117,12 +119,12 @@ describe("PlaygroundView", () => {
     expect(screen.getByRole("heading", { name: "Prompt Playground" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Prompt" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Context" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "PDF Page" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Book prompt" })).toBeTruthy();
     expect(screen.queryByDisplayValue("Extract TOC entries")).toBeNull();
   });
 
-  it("opens prompt and context panels from the sidebar", () => {
+  it("opens prompt and PDF page panels from the sidebar", () => {
     renderPlayground();
 
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
@@ -132,9 +134,8 @@ describe("PlaygroundView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close panel" }));
     expect(screen.queryByDisplayValue("Extract TOC entries")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Context" }));
+    fireEvent.click(screen.getByRole("button", { name: "PDF Page" }));
 
-    expect(screen.getByDisplayValue("Vision API")).toBeTruthy();
     expect(screen.getByDisplayValue("Book")).toBeTruthy();
     expect(screen.getByDisplayValue("2")).toBeTruthy();
     expect(screen.getByRole("dialog", { name: "Insert PDF page image" })).toBeTruthy();
@@ -145,7 +146,7 @@ describe("PlaygroundView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
     fireEvent.click(screen.getByRole("button", { name: "Save as global prompt" }));
-    fireEvent.click(screen.getByRole("button", { name: "Context" }));
+    fireEvent.click(screen.getByRole("button", { name: "PDF Page" }));
     fireEvent.click(screen.getByRole("button", { name: "Insert rendered page" }));
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     fireEvent.click(screen.getByRole("button", { name: "Book prompt" }));
@@ -156,6 +157,19 @@ describe("PlaygroundView", () => {
     expect(props.onNewChat).toHaveBeenCalledTimes(1);
     expect(props.onSelectChat).toHaveBeenCalledWith("chat-1");
     expect(props.onDeleteChat).toHaveBeenCalledWith("chat-1");
+  });
+
+  it("selects API and thinking mode from the layered sidebar picker", () => {
+    const props = renderPlayground();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Vision API\s*Thinking auto$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Thinking\s*Thinking auto$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Thinking off" }));
+    fireEvent.click(screen.getByRole("button", { name: /^API\s*Vision API$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Vision API\s*model-a$/ }));
+
+    expect(props.onSelectedThinkingModeChange).toHaveBeenCalledWith("off");
+    expect(props.onSelectedProviderChange).toHaveBeenCalledWith("provider-1");
   });
 
   it("renames a chat item from the sidebar", () => {

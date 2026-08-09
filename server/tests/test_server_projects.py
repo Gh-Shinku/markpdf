@@ -756,6 +756,28 @@ def test_playground_chat_sessions_save_history_but_send_only_current_message(mon
     ]
 
 
+def test_playground_chat_settings_are_persisted() -> None:
+    provider_id = _save_verified_provider()
+    create_response = client.post(
+        "/api/playground/chats",
+        json={"provider_id": provider_id, "thinking_mode": "off"},
+    )
+    assert create_response.status_code == 200
+    chat_id = create_response.json()["chat"]["id"]
+    assert create_response.json()["chat"]["thinking_mode"] == "off"
+
+    update_response = client.put(
+        f"/api/playground/chats/{chat_id}/settings",
+        json={"provider_id": provider_id, "thinking_mode": "on"},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["chat"]["provider_id"] == provider_id
+    assert update_response.json()["chat"]["thinking_mode"] == "on"
+    chat_response = client.get(f"/api/playground/chats/{chat_id}")
+    assert chat_response.json()["chat"]["thinking_mode"] == "on"
+
+
 def test_playground_chat_stream_sends_deltas_and_saves_history(monkeypatch) -> None:
     provider_id = _save_verified_provider()
     captured: dict[str, Any] = {}
@@ -852,6 +874,7 @@ def test_playground_chat_stream_suppresses_thinking_when_provider_is_off(monkeyp
         f"/api/playground/chats/{chat_id}/messages/stream",
         json={
             "provider_id": provider["id"],
+            "thinking_mode": "off",
             "message": {"id": "user-stream", "role": "user", "content": "current prompt", "attachments": []},
         },
     )

@@ -34,6 +34,103 @@
   min-width: 0;
 }
 
+.playground-model-picker {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.playground-model-trigger,
+.playground-model-menu-row,
+.playground-model-menu-back {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.playground-model-trigger {
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.playground-model-trigger:hover,
+.playground-model-trigger[aria-expanded="true"] {
+  background: var(--surface-hover);
+}
+
+.playground-model-trigger > span,
+.playground-model-menu-row > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.playground-model-trigger span span,
+.playground-model-menu-row span span {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playground-model-trigger small,
+.playground-model-menu-row small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playground-model-menu {
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+}
+
+.playground-model-menu-row {
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 8px;
+  border-radius: 7px;
+}
+
+.playground-model-menu-row:hover:not(:disabled),
+.playground-model-menu-back:hover {
+  background: var(--surface-hover);
+}
+
+.playground-model-menu-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.playground-model-menu-back {
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .playground-new-chat-button {
   justify-content: flex-start;
   width: 100%;

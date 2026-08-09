@@ -17,6 +17,7 @@ import {
   renamePlaygroundChat,
   setActivePlaygroundChat,
   streamPlaygroundChatMessage,
+  updatePlaygroundChatSettings,
   type PlaygroundAttachment,
   type PlaygroundChatListResponse,
   type PlaygroundChatMessage,
@@ -30,6 +31,7 @@ import {
   savePrompts,
   settingsKey,
 } from "../features/settings/api";
+import type { VlmThinkingMode } from "../types";
 
 export function PlaygroundRoute() {
   const navigate = useNavigate();
@@ -47,6 +49,7 @@ export function PlaygroundRoute() {
   const [promptDraft, setPromptDraft] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedProviderId, setSelectedProviderId] = useState("");
+  const [selectedThinkingMode, setSelectedThinkingMode] = useState<VlmThinkingMode>("auto");
   const [selectedChatId, setSelectedChatId] = useState("");
   const [pageNumber, setPageNumber] = useState("1");
   const pageDefaultProjectIdRef = useRef("");
@@ -88,10 +91,12 @@ export function PlaygroundRoute() {
   );
 
   const createChatMutation = useMutation({
-    mutationFn: () => createPlaygroundChat(selectedProviderId || null),
+    mutationFn: () => createPlaygroundChat(selectedProviderId || null, selectedThinkingMode),
     onSuccess: (response) => {
       cacheChatSession(response);
       setSelectedChatId(response.chat.id);
+      setSelectedProviderId(response.chat.provider_id ?? selectedProviderId);
+      setSelectedThinkingMode(response.chat.thinking_mode);
       clearComposerState();
     },
     onError: (error) => toast.error(error.message),
@@ -114,6 +119,24 @@ export function PlaygroundRoute() {
       renamePlaygroundChat(chatId, title),
     onSuccess: (response) => {
       cacheChatSession(response);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const updateChatSettingsMutation = useMutation({
+    mutationFn: ({
+      chatId,
+      providerId,
+      thinkingMode,
+    }: {
+      chatId: string;
+      providerId: string;
+      thinkingMode: VlmThinkingMode;
+    }) => updatePlaygroundChatSettings(chatId, providerId, thinkingMode),
+    onSuccess: (response) => {
+      cacheChatSession(response);
+      setSelectedProviderId(response.chat.provider_id ?? "");
+      setSelectedThinkingMode(response.chat.thinking_mode);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -169,6 +192,18 @@ export function PlaygroundRoute() {
       setSelectedProviderId(verifiedProviders[0].id);
     }
   }, [verifiedProviders, selectedProviderId]);
+
+  useEffect(() => {
+    const chat = chatQuery.data?.chat;
+    if (!chat) return;
+    if (
+      chat.provider_id &&
+      verifiedProviders.some((provider) => provider.id === chat.provider_id)
+    ) {
+      setSelectedProviderId(chat.provider_id);
+    }
+    setSelectedThinkingMode(chat.thinking_mode);
+  }, [chatQuery.data?.chat, verifiedProviders]);
 
   useEffect(() => {
     if (!chatListQuery.data || selectedChatId) return;
@@ -240,6 +275,16 @@ export function PlaygroundRoute() {
     return attachments;
   }, []);
 
+  const updateCurrentChatSettings = useCallback(
+    (providerId: string, thinkingMode: VlmThinkingMode) => {
+      setSelectedProviderId(providerId);
+      setSelectedThinkingMode(thinkingMode);
+      if (!selectedChatId || !providerId) return;
+      updateChatSettingsMutation.mutate({ chatId: selectedChatId, providerId, thinkingMode });
+    },
+    [selectedChatId, updateChatSettingsMutation],
+  );
+
   const handleSelectChat = useCallback(
     async (chatId: string) => {
       if (chatId === selectedChatId) return;
@@ -268,6 +313,7 @@ export function PlaygroundRoute() {
       for await (const event of streamPlaygroundChatMessage(
         selectedChatId,
         selectedProviderId,
+        selectedThinkingMode,
         message,
         signal,
       )) {
@@ -290,7 +336,7 @@ export function PlaygroundRoute() {
         throw new Error("Streaming response ended before the chat was saved");
       }
     },
-    [cacheChatSession, selectedChatId, selectedProviderId],
+    [cacheChatSession, selectedChatId, selectedProviderId, selectedThinkingMode],
   );
 
   const initialMessages = useMemo<ThreadMessageLike[]>(
@@ -309,6 +355,7 @@ export function PlaygroundRoute() {
       prompt={promptDraft}
       selectedProjectId={selectedProjectId}
       selectedProviderId={selectedProviderId}
+      selectedThinkingMode={selectedThinkingMode}
       pageNumber={pageNumber}
       pendingAttachments={pendingAttachments}
       sentAttachmentsByMessageId={sentAttachmentsByMessageId}
@@ -317,7 +364,12 @@ export function PlaygroundRoute() {
       isCreatingChat={createChatMutation.isPending}
       onPromptChange={setPromptDraft}
       onSelectedProjectChange={setSelectedProjectId}
-      onSelectedProviderChange={setSelectedProviderId}
+      onSelectedProviderChange={(providerId) =>
+        updateCurrentChatSettings(providerId, selectedThinkingMode)
+      }
+      onSelectedThinkingModeChange={(thinkingMode) =>
+        updateCurrentChatSettings(selectedProviderId, thinkingMode)
+      }
       onPageNumberChange={setPageNumber}
       onInsertRenderedPage={() => renderPageMutation.mutate()}
       onRemovePendingAttachment={handleRemovePendingAttachment}

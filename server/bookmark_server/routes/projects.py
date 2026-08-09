@@ -157,15 +157,43 @@ class PlaygroundChatPayload(BaseModel):
 
 class PlaygroundSessionMessagePayload(BaseModel):
     provider_id: str
+    thinking_mode: str = "auto"
     message: PlaygroundMessagePayload
+
+    @field_validator("thinking_mode")
+    @classmethod
+    def validate_thinking_mode(cls, value: str) -> str:
+        if value not in {"auto", "on", "off"}:
+            raise ValueError("thinking_mode must be auto, on, or off")
+        return value
 
 
 class PlaygroundChatCreatePayload(BaseModel):
     provider_id: str | None = None
+    thinking_mode: str = "auto"
+
+    @field_validator("thinking_mode")
+    @classmethod
+    def validate_thinking_mode(cls, value: str) -> str:
+        if value not in {"auto", "on", "off"}:
+            raise ValueError("thinking_mode must be auto, on, or off")
+        return value
 
 
 class PlaygroundChatRenamePayload(BaseModel):
     title: str
+
+
+class PlaygroundChatSettingsPayload(BaseModel):
+    provider_id: str
+    thinking_mode: str = "auto"
+
+    @field_validator("thinking_mode")
+    @classmethod
+    def validate_thinking_mode(cls, value: str) -> str:
+        if value not in {"auto", "on", "off"}:
+            raise ValueError("thinking_mode must be auto, on, or off")
+        return value
 
 
 def _project_or_404(project_id: str) -> dict[str, Any]:
@@ -191,12 +219,17 @@ def _provider_snapshot(provider: dict[str, Any]) -> dict[str, str]:
     return {key: str(provider.get(key) or "") for key in ("id", "name", "base_url", "model")}
 
 
-def _provider_completion_options(provider: dict[str, Any], *, stream: bool = False) -> tuple[dict[str, Any], list[str]]:
+def _provider_completion_options(
+    provider: dict[str, Any],
+    *,
+    stream: bool = False,
+    thinking_mode: str | None = None,
+) -> tuple[dict[str, Any], list[str]]:
     return build_chat_completion_options(
         base_url=str(provider.get("base_url") or ""),
         model=str(provider.get("model") or ""),
         sampling=provider.get("sampling") if isinstance(provider.get("sampling"), dict) else None,
-        thinking_mode=str(provider.get("thinking_mode") or "auto"),
+        thinking_mode=thinking_mode or str(provider.get("thinking_mode") or "auto"),
         extra_body=provider.get("extra_body") if isinstance(provider.get("extra_body"), dict) else None,
         stream=stream,
     )
@@ -860,7 +893,13 @@ def list_playground_chats() -> dict[str, Any]:
 
 @router.post("/playground/chats")
 def create_playground_chat(payload: PlaygroundChatCreatePayload | None = None) -> dict[str, Any]:
-    chat = store.create_playground_chat(provider_id=payload.provider_id if payload else None)
+    provider_id = payload.provider_id if payload else None
+    if provider_id is not None:
+        _provider_or_400(provider_id)
+    chat = store.create_playground_chat(
+        provider_id=provider_id,
+        thinking_mode=payload.thinking_mode if payload else "auto",
+    )
     return {"chat": chat, **store.list_playground_chats()}
 
 
@@ -883,6 +922,20 @@ def rename_playground_chat(chat_id: str, payload: PlaygroundChatRenamePayload) -
         raise HTTPException(status_code=400, detail="Playground chat title is required")
     try:
         chat = store.rename_playground_chat(chat_id, title[:120])
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Playground chat not found") from exc
+    return {"chat": chat, **store.list_playground_chats()}
+
+
+@router.put("/playground/chats/{chat_id}/settings")
+def update_playground_chat_settings(chat_id: str, payload: PlaygroundChatSettingsPayload) -> dict[str, Any]:
+    _provider_or_400(payload.provider_id)
+    try:
+        chat = store.update_playground_chat_settings(
+            chat_id,
+            provider_id=payload.provider_id,
+            thinking_mode=payload.thinking_mode,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Playground chat not found") from exc
     return {"chat": chat, **store.list_playground_chats()}
@@ -911,7 +964,7 @@ def send_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessage
     provider = _provider_or_400(payload.provider_id)
     vlm_message, rendered_attachments = _playground_message_to_vlm(payload.message)
     stored_attachments: list[dict[str, Any]] = []
-    completion_options, warnings = _provider_completion_options(provider)
+    completion_options, warnings = _provider_completion_options(provider, thinking_mode=payload.thinking_mode)
     try:
         content = request_chat_from_vlm(
             [vlm_message],
@@ -942,7 +995,13 @@ def send_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessage
         attachments=stored_attachments,
     )
     assistant_message = _stored_playground_message(role="assistant", content=content)
-    chat = store.append_playground_exchange(chat_id, str(provider["id"]), user_message, assistant_message)
+    chat = store.append_playground_exchange(
+        chat_id,
+        str(provider["id"]),
+        payload.thinking_mode,
+        user_message,
+        assistant_message,
+    )
     return {"chat": chat, "message": assistant_message, "warnings": warnings, **store.list_playground_chats()}
 
 
@@ -951,8 +1010,12 @@ def stream_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessa
     _playground_chat_or_404(chat_id)
     provider = _provider_or_400(payload.provider_id)
     vlm_message, rendered_attachments = _playground_message_to_vlm(payload.message)
-    completion_options, warnings = _provider_completion_options(provider, stream=True)
-    show_thinking = str(provider.get("thinking_mode") or "auto").strip().lower() != "off"
+    completion_options, warnings = _provider_completion_options(
+        provider,
+        stream=True,
+        thinking_mode=payload.thinking_mode,
+    )
+    show_thinking = payload.thinking_mode != "off"
 
     def stream_events():
         content_chunks: list[str] = []
@@ -995,7 +1058,13 @@ def stream_playground_chat_message(chat_id: str, payload: PlaygroundSessionMessa
                 attachments=stored_attachments,
             )
             assistant_message = _stored_playground_message(role="assistant", content="".join(content_chunks))
-            chat = store.append_playground_exchange(chat_id, str(provider["id"]), user_message, assistant_message)
+            chat = store.append_playground_exchange(
+                chat_id,
+                str(provider["id"]),
+                payload.thinking_mode,
+                user_message,
+                assistant_message,
+            )
             yield _sse_event("final", {"chat": chat, "message": assistant_message, "warnings": warnings, **store.list_playground_chats()})
         except Exception as exc:
             yield _sse_event("error", {"detail": str(exc)})

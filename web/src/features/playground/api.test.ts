@@ -21,7 +21,7 @@ describe("streamPlaygroundChatMessage", () => {
     );
 
     const events = [];
-    for await (const event of streamPlaygroundChatMessage("chat-1", "provider-1", {
+    for await (const event of streamPlaygroundChatMessage("chat-1", "provider-1", "auto", {
       id: "user-1",
       role: "user",
       content: "prompt",
@@ -47,7 +47,7 @@ describe("streamPlaygroundChatMessage", () => {
     );
 
     await expect(async () => {
-      for await (const event of streamPlaygroundChatMessage("chat-1", "provider-1", {
+      for await (const event of streamPlaygroundChatMessage("chat-1", "provider-1", "auto", {
         id: "user-1",
         role: "user",
         content: "prompt",

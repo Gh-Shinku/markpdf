@@ -1,4 +1,5 @@
 import { parseError, requestJson } from "../../api";
+import type { VlmThinkingMode } from "../../types";
 
 export type RenderedPdfPage = {
   project_id: string;
@@ -48,6 +49,7 @@ export type PlaygroundChatSessionSummary = {
 
 export type PlaygroundChatSession = PlaygroundChatSessionSummary & {
   provider_id: string | null;
+  thinking_mode: VlmThinkingMode;
   messages: PlaygroundChatMessage[];
 };
 
@@ -136,10 +138,11 @@ export function listPlaygroundChats(): Promise<PlaygroundChatListResponse> {
 
 export function createPlaygroundChat(
   providerId?: string | null,
+  thinkingMode: VlmThinkingMode = "auto",
 ): Promise<PlaygroundChatSessionResponse> {
   return requestJson<PlaygroundChatSessionResponse>("/api/playground/chats", {
     method: "POST",
-    body: JSON.stringify({ provider_id: providerId ?? null }),
+    body: JSON.stringify({ provider_id: providerId ?? null, thinking_mode: thinkingMode }),
   }).then(normalizeChatSessionResponse);
 }
 
@@ -169,6 +172,20 @@ export function renamePlaygroundChat(
   ).then(normalizeChatSessionResponse);
 }
 
+export function updatePlaygroundChatSettings(
+  chatId: string,
+  providerId: string,
+  thinkingMode: VlmThinkingMode,
+): Promise<PlaygroundChatSessionResponse> {
+  return requestJson<PlaygroundChatSessionResponse>(
+    `/api/playground/chats/${encodeURIComponent(chatId)}/settings`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ provider_id: providerId, thinking_mode: thinkingMode }),
+    },
+  ).then(normalizeChatSessionResponse);
+}
+
 export function deletePlaygroundChat(chatId: string): Promise<PlaygroundChatListResponse> {
   return requestJson<PlaygroundChatListResponse>(
     `/api/playground/chats/${encodeURIComponent(chatId)}`,
@@ -179,6 +196,7 @@ export function deletePlaygroundChat(chatId: string): Promise<PlaygroundChatList
 export function sendPlaygroundChatMessage(
   chatId: string,
   providerId: string,
+  thinkingMode: VlmThinkingMode,
   message: PlaygroundChatMessage,
 ): Promise<PlaygroundChatSendResponse> {
   return requestJson<PlaygroundChatSendResponse>(
@@ -187,6 +205,7 @@ export function sendPlaygroundChatMessage(
       method: "POST",
       body: JSON.stringify({
         provider_id: providerId,
+        thinking_mode: thinkingMode,
         message: {
           id: message.id,
           role: message.role,
@@ -208,6 +227,7 @@ export function sendPlaygroundChatMessage(
 export async function* streamPlaygroundChatMessage(
   chatId: string,
   providerId: string,
+  thinkingMode: VlmThinkingMode,
   message: PlaygroundChatMessage,
   signal?: AbortSignal,
 ): AsyncGenerator<PlaygroundChatStreamEvent, void> {
@@ -219,6 +239,7 @@ export async function* streamPlaygroundChatMessage(
       signal,
       body: JSON.stringify({
         provider_id: providerId,
+        thinking_mode: thinkingMode,
         message: {
           id: message.id,
           role: message.role,
@@ -275,6 +296,7 @@ function normalizeChatSessionResponse(
 function normalizeChatSession(chat: PlaygroundChatSession): PlaygroundChatSession {
   return {
     ...chat,
+    thinking_mode: chat.thinking_mode ?? "auto",
     messages: chat.messages.map((message) => ({
       ...message,
       attachments:

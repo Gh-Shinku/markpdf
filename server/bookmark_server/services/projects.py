@@ -244,7 +244,11 @@ class ProjectStore:
             active_chat_id = str(chats[0]["id"])
         return {"chats": chats, "active_chat_id": active_chat_id}
 
-    def create_playground_chat(self, provider_id: str | None = None) -> dict[str, Any]:
+    def create_playground_chat(
+        self,
+        provider_id: str | None = None,
+        thinking_mode: str | None = None,
+    ) -> dict[str, Any]:
         self._ensure_playground_root()
         chat_id = uuid4().hex
         now = utc_now_iso()
@@ -252,6 +256,7 @@ class ProjectStore:
             "id": chat_id,
             "title": "New chat",
             "provider_id": provider_id,
+            "thinking_mode": thinking_mode if thinking_mode in {"auto", "on", "off"} else "auto",
             "created_at": now,
             "updated_at": now,
             "messages": [],
@@ -280,6 +285,22 @@ class ProjectStore:
         self._write_playground_chat(chat)
         return chat
 
+    def update_playground_chat_settings(
+        self,
+        chat_id: str,
+        *,
+        provider_id: str | None = None,
+        thinking_mode: str | None = None,
+    ) -> dict[str, Any]:
+        chat = self.get_playground_chat(chat_id)
+        if provider_id is not None:
+            chat["provider_id"] = provider_id
+        if thinking_mode in {"auto", "on", "off"}:
+            chat["thinking_mode"] = thinking_mode
+        chat["updated_at"] = utc_now_iso()
+        self._write_playground_chat(chat)
+        return chat
+
     def delete_playground_chat(self, chat_id: str) -> dict[str, Any]:
         chat_dir = self._playground_chat_dir(chat_id)
         if not chat_dir.exists():
@@ -295,12 +316,14 @@ class ProjectStore:
         self,
         chat_id: str,
         provider_id: str,
+        thinking_mode: str,
         user_message: dict[str, Any],
         assistant_message: dict[str, Any],
     ) -> dict[str, Any]:
         chat = self.get_playground_chat(chat_id)
         now = utc_now_iso()
         chat["provider_id"] = provider_id
+        chat["thinking_mode"] = thinking_mode if thinking_mode in {"auto", "on", "off"} else "auto"
         chat["updated_at"] = now
         if str(chat.get("title") or "") == "New chat":
             title = str(user_message.get("content") or "").strip().splitlines()[0][:48]
@@ -666,6 +689,9 @@ class ProjectStore:
         normalized = dict(chat)
         normalized["title"] = str(normalized.get("title") or "New chat")
         normalized["provider_id"] = normalized.get("provider_id") or None
+        normalized["thinking_mode"] = (
+            normalized.get("thinking_mode") if normalized.get("thinking_mode") in {"auto", "on", "off"} else "auto"
+        )
         normalized["created_at"] = str(normalized.get("created_at") or "")
         normalized["updated_at"] = str(normalized.get("updated_at") or normalized["created_at"])
         messages = normalized.get("messages")

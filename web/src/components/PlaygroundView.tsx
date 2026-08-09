@@ -18,19 +18,31 @@ import {
   type ThreadMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { Copy, ImagePlus, Pencil, Plus, Save, SendHorizontal, Trash2, X } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  ImagePlus,
+  Pencil,
+  Plus,
+  Save,
+  SendHorizontal,
+  Trash2,
+  X,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 import { AppNavigation } from "./AppNavigation";
-import type { Project, VlmProvider } from "../types";
+import type { Project, VlmProvider, VlmThinkingMode } from "../types";
 import type {
   PlaygroundAttachment,
   PlaygroundChatMessage,
   PlaygroundChatSessionSummary,
 } from "../features/playground/api";
 
-type ActivePlaygroundPanel = "prompt" | "context" | null;
+type ActivePlaygroundPanel = "prompt" | "pdfPage" | null;
 const PLAYGROUND_MARKDOWN_PLUGINS = [remarkGfm];
 
 type PlaygroundViewProps = {
@@ -42,6 +54,7 @@ type PlaygroundViewProps = {
   prompt: string;
   selectedProjectId: string;
   selectedProviderId: string;
+  selectedThinkingMode: VlmThinkingMode;
   pageNumber: string;
   pendingAttachments: PlaygroundAttachment[];
   sentAttachmentsByMessageId: Record<string, PlaygroundAttachment[]>;
@@ -51,6 +64,7 @@ type PlaygroundViewProps = {
   onPromptChange: (value: string) => void;
   onSelectedProjectChange: (value: string) => void;
   onSelectedProviderChange: (value: string) => void;
+  onSelectedThinkingModeChange: (value: VlmThinkingMode) => void;
   onPageNumberChange: (value: string) => void;
   onInsertRenderedPage: () => void;
   onRemovePendingAttachment: (attachmentId: string) => void;
@@ -80,6 +94,7 @@ export function PlaygroundView({
   prompt,
   selectedProjectId,
   selectedProviderId,
+  selectedThinkingMode,
   pageNumber,
   pendingAttachments,
   sentAttachmentsByMessageId,
@@ -89,6 +104,7 @@ export function PlaygroundView({
   onPromptChange,
   onSelectedProjectChange,
   onSelectedProviderChange,
+  onSelectedThinkingModeChange,
   onPageNumberChange,
   onInsertRenderedPage,
   onRemovePendingAttachment,
@@ -106,6 +122,7 @@ export function PlaygroundView({
   onSendChat,
 }: PlaygroundViewProps) {
   const [activePanel, setActivePanel] = useState<ActivePlaygroundPanel>(null);
+  const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? null;
   const chatAdapter = useMemo<ChatModelAdapter>(
@@ -165,6 +182,16 @@ export function PlaygroundView({
       <section className="playground-layout">
         <aside className="playground-controls" aria-label="Playground controls">
           <div className="playground-sidebar-actions">
+            <ModelPicker
+              providers={providers}
+              selectedProvider={selectedProvider}
+              selectedProviderId={selectedProviderId}
+              selectedThinkingMode={selectedThinkingMode}
+              isOpen={isModelPickerOpen}
+              onOpenChange={setIsModelPickerOpen}
+              onSelectedProviderChange={onSelectedProviderChange}
+              onSelectedThinkingModeChange={onSelectedThinkingModeChange}
+            />
             <button
               className="primary-action playground-new-chat-button"
               type="button"
@@ -184,12 +211,12 @@ export function PlaygroundView({
                 Prompt
               </button>
               <button
-                className={`playground-panel-button ${activePanel === "context" ? "active" : ""}`}
+                className={`playground-panel-button ${activePanel === "pdfPage" ? "active" : ""}`}
                 type="button"
-                aria-expanded={activePanel === "context"}
-                onClick={() => setActivePanel((panel) => (panel === "context" ? null : "context"))}
+                aria-expanded={activePanel === "pdfPage"}
+                onClick={() => setActivePanel((panel) => (panel === "pdfPage" ? null : "pdfPage"))}
               >
-                Context
+                PDF Page
               </button>
             </div>
           </div>
@@ -225,7 +252,9 @@ export function PlaygroundView({
             >
               <div className="playground-drawer-header">
                 <div>
-                  <p className="section-kicker">{activePanel}</p>
+                  <p className="section-kicker">
+                    {activePanel === "prompt" ? "prompt" : "pdf page"}
+                  </p>
                   <h2 id="playground-drawer-heading">
                     {activePanel === "prompt" ? "Page extraction prompt" : "Insert PDF page image"}
                   </h2>
@@ -248,17 +277,13 @@ export function PlaygroundView({
                   onSavePrompt={onSavePrompt}
                 />
               ) : (
-                <ContextPanel
+                <PdfPagePanel
                   projects={projects}
-                  providers={providers}
                   selectedProject={selectedProject}
-                  selectedProvider={selectedProvider}
                   selectedProjectId={selectedProjectId}
-                  selectedProviderId={selectedProviderId}
                   pageNumber={pageNumber}
                   isRenderingPage={isRenderingPage}
                   onSelectedProjectChange={onSelectedProjectChange}
-                  onSelectedProviderChange={onSelectedProviderChange}
                   onPageNumberChange={onPageNumberChange}
                   onInsertRenderedPage={onInsertRenderedPage}
                 />
@@ -305,6 +330,140 @@ export function PlaygroundView({
       </section>
     </main>
   );
+}
+
+function ModelPicker({
+  providers,
+  selectedProvider,
+  selectedProviderId,
+  selectedThinkingMode,
+  isOpen,
+  onOpenChange,
+  onSelectedProviderChange,
+  onSelectedThinkingModeChange,
+}: {
+  providers: VlmProvider[];
+  selectedProvider: VlmProvider | null;
+  selectedProviderId: string;
+  selectedThinkingMode: VlmThinkingMode;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelectedProviderChange: (value: string) => void;
+  onSelectedThinkingModeChange: (value: VlmThinkingMode) => void;
+}) {
+  const [level, setLevel] = useState<"root" | "api" | "thinking">("root");
+  const providerLabel = selectedProvider?.name ?? "No API";
+  const thinkingLabel = thinkingModeLabel(selectedThinkingMode);
+
+  useEffect(() => {
+    if (!isOpen) setLevel("root");
+  }, [isOpen]);
+
+  return (
+    <section className="playground-model-picker">
+      <button
+        className="playground-model-trigger"
+        type="button"
+        aria-expanded={isOpen}
+        onClick={() => onOpenChange(!isOpen)}
+      >
+        <span>
+          <span>{providerLabel}</span>
+          <small>{thinkingLabel}</small>
+        </span>
+        <ChevronRight size={15} aria-hidden="true" />
+      </button>
+      {isOpen ? (
+        <div className="playground-model-menu">
+          {level === "root" ? (
+            <>
+              <button
+                className="playground-model-menu-row"
+                type="button"
+                onClick={() => setLevel("api")}
+              >
+                <span>
+                  <span>API</span>
+                  <small>{providerLabel}</small>
+                </span>
+                <ChevronRight size={15} aria-hidden="true" />
+              </button>
+              <button
+                className="playground-model-menu-row"
+                type="button"
+                disabled={!selectedProvider}
+                onClick={() => setLevel("thinking")}
+              >
+                <span>
+                  <span>Thinking</span>
+                  <small>{thinkingLabel}</small>
+                </span>
+                <ChevronRight size={15} aria-hidden="true" />
+              </button>
+            </>
+          ) : null}
+          {level === "api" ? (
+            <>
+              <ModelPickerBack label="API" onBack={() => setLevel("root")} />
+              {providers.map((provider) => (
+                <button
+                  className="playground-model-menu-row"
+                  type="button"
+                  key={provider.id}
+                  onClick={() => {
+                    onSelectedProviderChange(provider.id);
+                    setLevel("root");
+                  }}
+                >
+                  <span>
+                    <span>{provider.name}</span>
+                    <small>{provider.model}</small>
+                  </span>
+                  {provider.id === selectedProviderId ? (
+                    <Check size={15} aria-hidden="true" />
+                  ) : null}
+                </button>
+              ))}
+            </>
+          ) : null}
+          {level === "thinking" ? (
+            <>
+              <ModelPickerBack label="Thinking" onBack={() => setLevel("root")} />
+              {(["auto", "on", "off"] as VlmThinkingMode[]).map((mode) => (
+                <button
+                  className="playground-model-menu-row"
+                  type="button"
+                  key={mode}
+                  onClick={() => {
+                    onSelectedThinkingModeChange(mode);
+                    setLevel("root");
+                  }}
+                >
+                  <span>{thinkingModeLabel(mode)}</span>
+                  {mode === selectedThinkingMode ? <Check size={15} aria-hidden="true" /> : null}
+                </button>
+              ))}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ModelPickerBack({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <button className="playground-model-menu-back" type="button" onClick={onBack}>
+      <ChevronLeft size={15} aria-hidden="true" />
+      {label}
+    </button>
+  );
+}
+
+function thinkingModeLabel(mode: VlmThinkingMode): string {
+  if (mode === "on") return "Thinking on";
+  if (mode === "off") return "Thinking off";
+  return "Thinking auto";
 }
 
 function PlaygroundComposer({ prompt, disabled }: { prompt: string; disabled: boolean }) {
@@ -489,48 +648,27 @@ function PromptPanel({
   );
 }
 
-function ContextPanel({
+function PdfPagePanel({
   projects,
-  providers,
   selectedProject,
-  selectedProvider,
   selectedProjectId,
-  selectedProviderId,
   pageNumber,
   isRenderingPage,
   onSelectedProjectChange,
-  onSelectedProviderChange,
   onPageNumberChange,
   onInsertRenderedPage,
 }: {
   projects: Project[];
-  providers: VlmProvider[];
   selectedProject: Project | null;
-  selectedProvider: VlmProvider | null;
   selectedProjectId: string;
-  selectedProviderId: string;
   pageNumber: string;
   isRenderingPage: boolean;
   onSelectedProjectChange: (value: string) => void;
-  onSelectedProviderChange: (value: string) => void;
   onPageNumberChange: (value: string) => void;
   onInsertRenderedPage: () => void;
 }) {
   return (
     <div className="playground-drawer-body">
-      <label className="playground-field">
-        <span>VLM API</span>
-        <select
-          value={selectedProviderId}
-          onChange={(event) => onSelectedProviderChange(event.target.value)}
-        >
-          {providers.map((provider) => (
-            <option key={provider.id} value={provider.id}>
-              {provider.name}
-            </option>
-          ))}
-        </select>
-      </label>
       <label className="playground-field">
         <span>Project PDF</span>
         <select
@@ -563,7 +701,6 @@ function ContextPanel({
         <ImagePlus size={16} aria-hidden="true" />
         Insert rendered page
       </button>
-      {!selectedProvider ? <p className="warning-text">No verified VLM API selected.</p> : null}
     </div>
   );
 }
