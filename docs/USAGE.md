@@ -1,20 +1,23 @@
 # PDF Bookmark Workspace — User Guide
 
-A local web UI for managing PDF outline (bookmark) JSON, generating outlines with a
-vision language model (VLM), and writing the result back into the PDF.
+A local web workspace for creating, editing, generating, validating, and writing
+PDF outlines (bookmarks). The app stores a project's table of contents (TOC) as
+JSON, renders the PDF beside a Monaco-based editor, and can use an
+OpenAI-compatible vision language model (VLM) to extract outlines from printed
+table-of-contents pages.
 
 ## Overview
 
-- **Projects** — import PDFs, browse them in a library, and maintain one or more
-  TOC JSON files per project.
-- **Workspace editor** — edit TOC JSON in a Monaco-based editor with live
-  validation; edits auto-save.
-- **Preview** — validate and write the outline into the PDF with one click.
-  The project PDF is replaced by a bookmarked copy.
-- **AI generation** — a VLM scans the printed table-of-contents pages of the PDF
-  and produces a TOC JSON file, which is applied to the project automatically.
-- **Tasks** — a job list shows generation progress, failures, and per-job
-  downloads.
+- **Projects** — import one or more PDFs, browse them in a project library, and
+  keep generation metadata with each project.
+- **Workspace editor** — edit one or more TOC JSON files per project with live
+  JSON validation and auto-save.
+- **Preview** — validate the selected TOC file and write the resulting outline
+  back into the project PDF.
+- **AI generation** — scan the printed table-of-contents pages with a configured
+  VLM provider and save the generated result as a TOC file.
+- **Tasks** — monitor background generation jobs, including status, progress,
+  failures, and generated-result actions.
 
 ## Getting Started
 
@@ -24,115 +27,162 @@ vision language model (VLM), and writing the result back into the PDF.
    ./bookmark
    ```
 
-   The launcher builds the frontend on first run, serves the API and the web
-   UI on one port (`http://127.0.0.1:8000` by default), and opens the browser
-   automatically. See `README.md` for options (`--port`, `--no-open`).
+   The launcher builds the frontend on first run, serves the API and web UI on
+   one port (`http://127.0.0.1:8000` by default), and opens the browser
+   automatically. See `README.md` for launcher options such as `--port` and
+   `--no-open`.
 2. Upload one or more PDFs from the **Projects** page.
-3. Configure at least one OpenAI-compatible VLM API in **Settings** if you want
-   to use AI generation.
+3. If you want AI generation, configure and test at least one
+   OpenAI-compatible VLM API in **Settings**.
+4. Configure the project's generation metadata before adding it to the queue:
+   TOC page range, page offset, and VLM provider.
 
-Project data (PDFs, TOC files, caches) lives under `server/workspace_data/` by
-default; the backend reads the `BOOKMARK_WORKSPACE_DATA` environment variable to
-override the location.
+Project data lives under `server/workspace_data/` by default, including PDFs,
+TOC files, metadata, task records, and generation caches. Set the
+`BOOKMARK_WORKSPACE_DATA` environment variable to use a different location.
 
 ## Projects
 
-- **Import** — drag PDFs onto the upload zone or use the file picker. Multiple
-  files are imported in parallel; failures are reported per file.
-- **Open** — click a project row to open its workspace.
-- **Select** — use the checkboxes to multi-select projects, then run batch
-  actions from the floating bar: **Generate**, **Download**, or **Delete**.
-- **Download** — exports the project PDF with the applied outline
-  (`<name>_bookmarked.pdf`).
-- **Delete** — removes the project and all of its files. Confirm when prompted.
+The **Projects** page is the main entry point for project-level operations.
 
-Each project stores generation settings: page offset, TOC start/end pages, and
-the VLM provider to use.
+- **Import** — drag PDFs onto the upload area or use the file picker. Multiple
+  PDFs can be uploaded at once; each PDF creates its own project. Upload
+  failures are reported per file.
+- **Open** — click a project row to open its workspace.
+- **Configure generation** — open the row action menu and set the TOC page
+  range, page offset, and VLM provider.
+- **Select** — move the cursor near the left side of a row to reveal its
+  checkbox. After selecting one or more projects, use the bottom selection bar
+  for batch actions.
+- **Add to queue** — enqueue selected projects for AI generation using each
+  project's saved metadata.
+- **Download PDF** — download the project's current bookmarked PDF as
+  `<name>_bookmarked.pdf`.
+- **Delete** — remove the project and all files associated with it after
+  confirmation.
+
+Each project stores the following metadata:
+
+| Metadata | Meaning |
+| --- | --- |
+| `page_offset` | Offset used to map a relative TOC page to a real PDF page. |
+| `toc_start` | First printed table-of-contents page, as a 1-based PDF page. |
+| `toc_end` | Last printed table-of-contents page, as a 1-based PDF page. |
+| `provider_id` | VLM provider used when this project is added to the generation queue. |
+| `inject_toc_page` | Whether Preview should prepend a bookmark pointing to the TOC page. |
+
+### Page Offset and TOC Range
+
+The app distinguishes between two page-number systems:
+
+- **PDF page** — the physical page position in the PDF file, counted from 1.
+- **Printed page** — the page number printed in the book and used by TOC
+  entries.
+
+For TOC entries with `attribute: "relative"`, the app computes:
+
+```text
+PDF page = printed page + page_offset
+```
+
+For example, if printed page `1` starts on PDF page `28`, set
+`page_offset` to `27`. If the printed page and PDF page are the same, use `0`.
+Negative offsets are valid when the printed numbering is ahead of the PDF page
+position.
+
+`toc_start` and `toc_end` are always 1-based PDF pages and form an inclusive
+range. They identify the printed table-of-contents pages that the VLM should
+scan, not the logical chapter pages referenced by TOC entries.
 
 ## Workspace Editor
 
-The workspace shows the TOC JSON on the left (Monaco editor) and the PDF preview
-on the right, split by a draggable divider.
+The workspace shows the selected TOC JSON file on the left and the PDF preview
+on the right. The two panes are separated by a draggable divider.
 
-- **TOC files** — a project can hold multiple TOC JSON files. Open the file
-  explorer (leftmost button in the editor toolbar) to switch between them. The
-  last opened file is remembered per project and restored next time.
-- **Auto-save** — edits are saved automatically (debounced) as you type; the
-  page offset and other metadata are saved immediately.
-- **Page offset** — relative page numbers in the TOC are shifted by this value
-  (0-based offset, i.e. `1` means "subtract 1"). Change it from the Preview
-  settings menu.
-- **Keyboard** — the editor supports the usual Monaco shortcuts (Ctrl+F search,
-  Ctrl+Z undo, etc.).
+- **TOC files** — a project can contain multiple TOC JSON files. Use the file
+  explorer button in the editor toolbar to switch files. The last opened file is
+  remembered per project.
+- **Auto-save** — editor changes are saved automatically after a short debounce.
+  Project metadata such as page offset and TOC range is saved separately.
+- **Validation** — the editor uses the same TOC JSON shape as the backend and
+  highlights schema errors while editing.
+- **Keyboard shortcuts** — Monaco editor contributions are enabled so common
+  VS Code-style editing shortcuts are available.
+- **Preview actions** — use **Preview** to validate and apply the current TOC;
+  use the download button to export the current bookmarked PDF.
 
 ## Previewing
 
-**Preview** validates the current TOC JSON, writes the outline into the PDF,
-and replaces the project's `document.pdf`. The preview pane then shows the
-bookmarked file.
+**Preview** validates the selected TOC JSON file, writes the outline into the
+PDF, and replaces the project's `document.pdf` with the bookmarked copy. The
+preview pane then reloads the updated PDF.
 
-- The validation step reports problems before writing; invalid JSON or
-  out-of-range pages are rejected with an error message.
-- If writing fails, the previous successful PDF version is kept.
-- Preview settings (the chevron next to the Preview button):
-  - **Page offset** — same value used by the editor.
-  - **注入目录 page** (Inject ToC page) — when enabled, a bookmark pointing to
-    the first table-of-contents page is prepended automatically. The title is
-    `目录` for CJK-heavy documents and `Contents` otherwise. The injection is
-    idempotent and is persisted back into the TOC file being applied.
+- Invalid JSON, invalid TOC shape, and out-of-range pages are rejected before
+  writing.
+- If writing fails, the previous successful PDF is kept.
+- Preview settings are opened from the chevron next to the **Preview** button:
+  - **Page offset** — used when resolving `relative` TOC pages.
+  - **Inject ToC page** — when enabled, a top-level bookmark pointing to
+    `toc_start` is prepended automatically. The title is `目录` when CJK
+    characters dominate the TOC titles and `Contents` otherwise. The injected
+    bookmark uses `attribute: "absolute"`, is idempotent, and is persisted back
+    into the TOC file being applied.
 
 ## AI Generation
 
-From the workspace toolbar, click **AI Generate** (the wand button; the chevron
-opens the same settings) and choose:
+AI generation can be started from either:
 
-- **VLM API** — which configured provider to use.
-- **TOC start page / TOC end page** — the 1-based page range of the printed
-  table of contents in the PDF (the pages that will be scanned).
+- the **Projects** page, by configuring one or more projects and clicking
+  **Add to queue**; or
+- the workspace toolbar, by clicking **AI Generate** for the current project.
 
-Generation runs as a background job (see **Tasks**). Each page in the range is
-rendered at 220 DPI and sent to the VLM, which returns a flat list of entries.
-The server then assembles the entries into a nested tree, fixes indentation
-levels with a second LLM call, and saves the result as a TOC file.
+Generation requires:
 
-- **Auto-apply** — successful generations are applied to the project
-  automatically (equivalent to clicking Preview). If applying fails, the job is
-  marked **failed** with the message *"TOC generated but applying failed"* so
-  you can inspect and fix it manually.
-- **Cache** — per-page VLM results and final TOCs are cached under
-  `workspace_data/cache/`, keyed by PDF, page range, model, DPI, and the exact
-  rendered prompt. Rerunning the same range is instant; changing the prompt
-  invalidates the cache and triggers a rescan.
+- a verified VLM provider;
+- a valid `toc_start` / `toc_end` range; and
+- a valid `page_offset`.
+
+Each page in the TOC range is rendered at 220 DPI and sent to the VLM. The model
+returns a flat list of entries for each page. The server then assembles entries
+into a nested TOC tree, performs a hierarchy-correction pass, saves the result
+as a generated TOC file, and attempts to apply it to the project PDF.
+
+- **Auto-apply** — successful generations are applied automatically. If TOC
+  generation succeeds but applying the result fails, the task is marked failed
+  with a message such as `TOC generated but applying failed`; the generated TOC
+  file can still be inspected and corrected manually.
+- **Cache** — per-page VLM responses and final TOC outputs are cached under
+  `workspace_data/cache/`. Cache keys include the PDF, page range, model, DPI,
+  and rendered prompt. Repeating an identical run is fast; changing the prompt
+  invalidates the relevant cache entries.
 
 ## Prompts
 
-The prompt used for page scanning is fully customizable in **Settings →
-Prompt** (up to 20,000 characters). Three placeholders are substituted before
-the request is sent:
+The page-scanning prompt is customizable in **Settings → Prompt** and supports
+up to 20,000 characters. The following placeholders are substituted before the
+request is sent:
 
 | Placeholder | Meaning |
 | --- | --- |
-| `{toc_start}` | First page of the TOC range (1-based) |
-| `{toc_end}` | Last page of the TOC range (1-based) |
-| `{pdf_name}` | The PDF file name without extension |
+| `{toc_start}` | First page of the TOC range, 1-based. |
+| `{toc_end}` | Last page of the TOC range, 1-based. |
+| `{pdf_name}` | PDF file name without extension. |
 
-The default prompt asks the model to obey these rules:
+The default prompt asks the model to follow these rules:
 
-1. **Flat output** — every entry is a direct element of the root array, never nested.
-2. **Text cleaning** — merge multi-line titles; strip leader dots
-   (`Chapter 1.......10` → text `Chapter 1`, page 10).
-3. **Page range** — only process content visible on the current page.
-4. **Filtering** — ignore headers, footers, and decorative elements.
-5. **Verbatim** — keep the original numbering (`1.2.3`, `Appendix A`) in the text.
-6. **Indent level** — report the visual indentation depth (0 = top level) so the
-   server can rebuild nesting.
-7. **Page numbers** — copy the printed page number exactly as a string
-   (`'12'` or `'vii'`); entries with roman numerals or unparsable page numbers
-   are dropped by the reader.
-8. **Missing page numbers** — a heading without a printed page number inherits
-   the page of the first entry that follows it within the same chapter.
+1. Return a flat array only; do not nest entries.
+2. Merge multi-line titles and remove leader dots such as
+   `Chapter 1.......10`.
+3. Process only content visible on the current scanned page.
+4. Ignore headers, footers, page decorations, and non-TOC elements.
+5. Preserve original numbering in titles, such as `1.2.3` or `Appendix A`.
+6. Report visual indentation depth as `indent`, where `0` is top level.
+7. Copy the printed page number as a string. Entries with roman numerals or
+   unparsable page numbers are dropped by the reader.
+8. For a heading without a visible page number, inherit the page of the first
+   following entry in the same chapter when possible.
 
-The model must reply with a JSON array only:
+The model must return a JSON array only:
 
 ```json
 [{"text": "Full Title String", "page": "12", "indent": 0}]
@@ -140,85 +190,77 @@ The model must reply with a JSON array only:
 
 ## Settings
 
-- **VLM APIs** — manage OpenAI-compatible providers (base URL, model, API key).
-  Click **Test** to verify a provider: the backend sends a tiny synthetic image
-  and expects the model to answer `VLM_OK`. Only verified providers can be used
-  for generation.
-- **Prompt** — edit the scanning prompt (see above). **Restore default** brings
-  back the built-in prompt. The prompt is stored globally and applies to all
-  projects.
-- **Inject ToC page** is a per-project option in the workspace preview settings
-  (see *Previewing*).
+- **VLM APIs** — manage OpenAI-compatible providers. Each provider has a name,
+  base URL, model, and API key. The provider list displays the API name; open a
+  provider to edit its connection details.
+- **Test provider** — sends a tiny synthetic image to the provider and expects
+  the exact response `VLM_OK`. Only verified providers can be used for
+  generation.
+- **Prompt** — edit the global page-scanning prompt. **Restore default** resets
+  it to the built-in prompt.
+- **Inject ToC page** — configured per project from workspace preview settings.
 
 ## TOC JSON Format
 
-The TOC is a JSON array. Every entry has:
+The TOC is a JSON array. Every node must be an object with this shape:
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `title` | string | The bookmark text. |
-| `page` | number | The page number as printed in the PDF. |
-| `attribute` | `"relative"` \| `"absolute"` (optional) | How `page` is interpreted; defaults to `"relative"`. |
-| `children` | array (optional) | Nested sub-bookmarks. |
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `title` | string | Yes | Bookmark title. Blank titles are invalid. |
+| `page` | number \| `null` | Yes | Printed page number for `relative` entries, PDF page for `absolute` entries, or `null` for heading-only nodes. |
+| `attribute` | `"relative"` \| `"absolute"` | No | How `page` is interpreted. Defaults to `"relative"`. |
+| `children` | array | Yes | Nested child bookmarks. Use `[]` for leaf nodes. |
 
-- **relative** — the printed page number plus the project's page offset yields
-  the real PDF page (1-based).
-- **absolute** — `page` is already the 1-based PDF page; the offset is ignored.
+Page resolution rules:
+
+- `relative` — `page + page_offset` yields the 1-based PDF page.
+- `absolute` — `page` is already the 1-based PDF page; `page_offset` is ignored.
+- `page: null` — used for heading-only nodes. The backend resolves the bookmark
+  target from the first child with a page, or from the next sibling when needed.
 
 Example:
 
 ```json
 [
   {
-    "title": "Chapter 1",
-    "page": 1,
+    "title": "Part I",
+    "page": null,
     "children": [
-      { "title": "Introduction", "page": 1 },
-      { "title": "Background", "page": 4 }
+      {
+        "title": "Chapter 1",
+        "page": 1,
+        "children": [
+          {
+            "title": "Introduction",
+            "page": 1,
+            "children": []
+          },
+          {
+            "title": "Background",
+            "page": 4,
+            "children": []
+          }
+        ]
+      }
     ]
   },
   {
-    "title": "Chapter 2",
-    "page": 10,
-    "attribute": "relative"
+    "title": "Contents",
+    "page": 3,
+    "attribute": "absolute",
+    "children": []
   }
 ]
 ```
 
 ## Tasks
 
-The **Tasks** page lists every generation job across all projects.
+The **Tasks** page lists generation jobs across all projects.
 
-- **Status** — `queued`, `running`, `succeeded`, or `failed`, with a progress
-  bar while running. A job that generated a TOC but failed to apply it is
-  marked `failed` with the reason shown.
+- **Status** — `queued`, `running`, `succeeded`, or `failed`.
+- **Progress** — while a task is running, the page-level progress bar reports
+  rendering, scanning, cache loading, processing, and saving phases.
 - **Filters** — All / Active / Succeeded / Failed.
-- **Actions** — open the project, apply the generated TOC to the project PDF
-  (`Apply`), or download the bookmarked PDF without applying.
-
-## FAQ / Troubleshooting
-
-**The generation job is slow.** Pages are rendered at 220 DPI and scanned one
-by one. Reruns of the same page range are served from cache and are much
-faster.
-
-**My prompt changes did nothing.** The cache key includes the exact rendered
-prompt. After editing the prompt, the first run rescans every page; afterwards
-results are cached again.
-
-**Roman-numeral pages (i, ii, iii…) are missing from the result.** By design —
-the reader drops entries whose printed page number is a roman numeral or cannot
-be parsed.
-
-**The backend can't reach the VLM provider.** If you run behind a local HTTP
-proxy, the proxy may intercept requests to `127.0.0.1` (a common issue on
-Linux). Configure your proxy to bypass localhost, or unset it for the backend
-process.
-
-**Preview says the TOC is invalid.** Check the reported issues: page numbers
-out of range, missing `title`/`page`, or invalid JSON. Use the validation
-message in the workspace to locate the offending entry.
-
-**Where is my data?** Everything lives in the workspace data directory
-(`server/workspace_data/` by default): project PDFs, TOC files, and the
-generation cache. Back it up to keep your library.
+- **Actions** — open the related project. For succeeded jobs, generated results
+  can also be applied or downloaded when the task record still references an
+  available project.

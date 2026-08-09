@@ -6,6 +6,15 @@ A desktop-style web UI for managing PDF outline (bookmark) JSON locally, generat
 - **In-app documentation**: visit `http://127.0.0.1:5173/docs` after starting the app
 - **中文文档**: [README_zh.md](README_zh.md)
 
+## Requirements
+
+- **uv** — required for backend dependency management and startup.
+- **Python 3.12+** — required by the backend. `uv` can install and manage a
+  compatible Python version, but the Unix launcher also expects `python3` to be
+  available for its port check.
+- **Node.js / npm** — required to install and build the frontend. Use Node.js
+  `^20.19.0` or `>=22.12.0` to satisfy Vite's engine requirement.
+
 ## Run
 
 Launch the app with a single command (builds the frontend on first run,
