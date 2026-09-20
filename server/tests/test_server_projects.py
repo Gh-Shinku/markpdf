@@ -47,6 +47,14 @@ def _create_project(tmp_path: Path, page_count: int = 4) -> dict[str, Any]:
     return response.json()["project"]
 
 
+def _enable_inject_toc_page(project_id: str) -> None:
+    response = client.put(
+        f"/api/projects/{project_id}/metadata",
+        json={"inject_toc_page": True},
+    )
+    assert response.status_code == 200
+
+
 def test_create_list_and_read_project_toc(tmp_path, isolated_project_store) -> None:
     project = _create_project(tmp_path)
 
@@ -403,6 +411,7 @@ def test_unsupported_thinking_mode_warns_and_omits_extra_body(monkeypatch) -> No
 
 def test_generate_toc_creates_candidate_file(tmp_path, monkeypatch) -> None:
     project = _create_project(tmp_path, page_count=3)
+    _enable_inject_toc_page(project["id"])
     provider_id = _save_verified_provider()
 
     def fake_extract_toc_json(**kwargs):
@@ -642,6 +651,7 @@ def test_generation_job_without_progress_is_normalized(tmp_path) -> None:
 
 def test_apply_toc_file_persists_injected_toc_page(tmp_path, isolated_project_store) -> None:
     project = _create_project(tmp_path, page_count=4)
+    _enable_inject_toc_page(project["id"])
     toc_text = json.dumps(
         [
             {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": []},
@@ -675,6 +685,35 @@ def test_apply_toc_file_persists_injected_toc_page(tmp_path, isolated_project_st
     assert apply_response.status_code == 200
     persisted_nodes = json.loads(client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"])
     assert [node["title"] for node in persisted_nodes] == ["Contents", "Chapter 1"]
+
+
+def test_apply_toc_file_skips_injected_toc_page_by_default(
+    tmp_path, isolated_project_store
+) -> None:
+    project = _create_project(tmp_path, page_count=4)
+    assert project["inject_toc_page"] is False
+    toc_text = json.dumps(
+        [
+            {"title": "Chapter 1", "page": 1, "attribute": "relative", "children": []},
+        ]
+    )
+    save_response = client.put(
+        f"/api/projects/{project['id']}/toc-files/main",
+        json={"toc_json": toc_text},
+    )
+    assert save_response.status_code == 200
+
+    apply_response = client.post(
+        f"/api/projects/{project['id']}/toc-files/main/apply",
+        json={"page_offset": 0},
+    )
+    assert apply_response.status_code == 200
+
+    # 未启用注入时,目录书签原样写入,不追加 "Contents"。
+    persisted_nodes = json.loads(
+        client.get(f"/api/projects/{project['id']}/toc").json()["toc_json"]
+    )
+    assert [node["title"] for node in persisted_nodes] == ["Chapter 1"]
 
 
 def test_rendered_page_api_returns_reproducible_backend_image(tmp_path) -> None:

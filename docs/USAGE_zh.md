@@ -52,7 +52,7 @@ OpenAI 接口的视觉语言模型（VLM）从书籍自带的印刷目录页中�
 | `toc_start`       | 印刷目录的起始页，使用从 1 开始的 PDF 绝对页码。       |
 | `toc_end`         | 印刷目录的结束页，使用从 1 开始的 PDF 绝对页码。       |
 | `provider_id`     | 项目加入生成队列时使用的 VLM API。                     |
-| `inject_toc_page` | 预览写入时是否自动插入一个指向目录页本身的书签。       |
+| `inject_toc_page` | 预览写入时是否自动插入一个指向目录页本身的书签，默认关闭。 |
 
 ### 页码偏移量与目录页范围
 
@@ -92,7 +92,7 @@ PDF 页码 = 印刷页码 + page_offset
 - 如果写入失败，系统会保留上一次成功生成的 PDF。
 - 点击 **Preview** 按钮旁的箭头可打开预览设置：
   - **Page offset**：解析 `relative` TOC 页码时使用的偏移量。
-  - **Inject ToC page**：启用后，系统会自动在顶层插入一个指向 `toc_start` 的书签。若 TOC 标题以中日韩字符为主，标题为 `目录`；否则为 `Contents`。该书签使用 `attribute: "absolute"`，可重复执行且不会重复插入，并会持久化回正在写入的 TOC 文件。
+  - **Inject ToC page**：默认关闭。启用后，系统会自动在顶层插入一个指向 `toc_start` 的书签。若 TOC 标题以中日韩字符为主，标题为 `目录`；否则为 `Contents`。该书签使用 `attribute: "absolute"`，可重复执行且不会重复插入，并会持久化回正在写入的 TOC 文件。
 
 ## AI 生成
 
@@ -161,7 +161,7 @@ AI 生成可从两个入口启动：
 - **VLM APIs**：管理兼容 OpenAI 接口的 VLM 服务。每个 API 包含名称、base URL、模型与 API key。列表中仅展示 API 名称，打开后可编辑连接详情。
 - **测试 API**：后端会向该 API 发送一张很小的合成图片，并要求模型准确返回 `VLM_OK`。只有通过测试的 API 才可用于生成。
 - **Prompt**：编辑全局页面扫描 prompt。点击 **Restore default** 可恢复内置默认 prompt。
-- **Inject ToC page**：这是项目级选项，可在工作区预览设置中配置。
+- **Inject ToC page**：默认关闭，这是项目级选项，可在工作区预览设置中配置。
 
 ## TOC JSON 格式
 

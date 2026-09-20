@@ -72,7 +72,7 @@ Each project stores the following metadata:
 | `toc_start`       | First printed table-of-contents page, as a 1-based PDF page.          |
 | `toc_end`         | Last printed table-of-contents page, as a 1-based PDF page.           |
 | `provider_id`     | VLM provider used when this project is added to the generation queue. |
-| `inject_toc_page` | Whether Preview should prepend a bookmark pointing to the TOC page.   |
+| `inject_toc_page` | Whether Preview should prepend a bookmark pointing to the TOC page (off by default). |
 
 ### Page Offset and TOC Range
 
@@ -125,11 +125,11 @@ preview pane then reloads the updated PDF.
 - If writing fails, the previous successful PDF is kept.
 - Preview settings are opened from the chevron next to the **Preview** button:
   - **Page offset** — used when resolving `relative` TOC pages.
-  - **Inject ToC page** — when enabled, a top-level bookmark pointing to
-    `toc_start` is prepended automatically. The title is `目录` when CJK
-    characters dominate the TOC titles and `Contents` otherwise. The injected
-    bookmark uses `attribute: "absolute"`, is idempotent, and is persisted back
-    into the TOC file being applied.
+  - **Inject ToC page** — off by default. When enabled, a top-level bookmark
+    pointing to `toc_start` is prepended automatically. The title is `目录` when
+    CJK characters dominate the TOC titles and `Contents` otherwise. The
+    injected bookmark uses `attribute: "absolute"`, is idempotent, and is
+    persisted back into the TOC file being applied.
 
 ## AI Generation
 
@@ -224,7 +224,8 @@ runs.
   generation.
 - **Prompt** — edit the global page-scanning prompt. **Restore default** resets
   it to the built-in prompt.
-- **Inject ToC page** — configured per project from workspace preview settings.
+- **Inject ToC page** — off by default; configured per project from workspace
+  preview settings.
 
 ## TOC JSON Format
 

@@ -30,7 +30,7 @@ class AppliedPdf:
 
 
 def toc_with_injected_page(project: dict[str, Any], toc_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if not project.get("inject_toc_page", True):
+    if not project.get("inject_toc_page", False):
         return toc_data
     return inject_toc_page_bookmark(
         toc_data,

@@ -483,7 +483,7 @@ function GenerationSettingsDialog({
           tocEnd: String(project.toc_end ?? project.page_count),
           pageOffset: String(project.page_offset ?? 0),
           providerId: project.provider_id ?? providers[0]?.id ?? "",
-          injectTocPage: project.inject_toc_page ?? true,
+          injectTocPage: project.inject_toc_page ?? false,
         },
       ]),
     ),
@@ -629,7 +629,7 @@ function parseGenerationSettings(
   const tocEnd = Number.parseInt(form?.tocEnd ?? String(project.toc_end ?? project.page_count), 10);
   const pageOffset = Number.parseInt(form?.pageOffset ?? String(project.page_offset ?? 0), 10);
   const providerId = form?.providerId ?? project.provider_id ?? "";
-  const injectTocPage = form?.injectTocPage ?? project.inject_toc_page ?? true;
+  const injectTocPage = form?.injectTocPage ?? project.inject_toc_page ?? false;
   const valid =
     Number.isInteger(tocStart) &&
     Number.isInteger(tocEnd) &&

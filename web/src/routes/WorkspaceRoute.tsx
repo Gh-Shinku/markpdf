@@ -65,7 +65,7 @@ export function WorkspaceRoute() {
   );
   const [tocText, setTocText] = useState("");
   const [pageOffset, setPageOffset] = useState("0");
-  const [injectTocPage, setInjectTocPage] = useState(true);
+  const [injectTocPage, setInjectTocPage] = useState(false);
   const [pdfVersion, setPdfVersion] = useState(0);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
@@ -75,7 +75,7 @@ export function WorkspaceRoute() {
   const [isStartingGeneration, setIsStartingGeneration] = useState(false);
   const savedTocRef = useRef("");
   const savedOffsetRef = useRef("0");
-  const savedInjectTocPageRef = useRef(true);
+  const savedInjectTocPageRef = useRef(false);
   const savedTocStartRef = useRef("1");
   const savedTocEndRef = useRef("1");
   const tocSaveSequenceRef = useRef(0);
@@ -185,8 +185,8 @@ export function WorkspaceRoute() {
     savedTocStartRef.current = String(project.toc_start ?? 1);
     setTocEnd(String(project.toc_end ?? project.page_count));
     savedTocEndRef.current = String(project.toc_end ?? project.page_count);
-    setInjectTocPage(project.inject_toc_page ?? true);
-    savedInjectTocPageRef.current = project.inject_toc_page ?? true;
+    setInjectTocPage(project.inject_toc_page ?? false);
+    savedInjectTocPageRef.current = project.inject_toc_page ?? false;
   }, [projectId, projectQuery.data]);
   useEffect(() => {
     if (!verifiedProviders.some((provider) => provider.id === providerId))

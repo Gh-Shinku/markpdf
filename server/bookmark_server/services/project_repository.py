@@ -66,7 +66,7 @@ class ProjectRepository:
                 "page_offset": page_offset,
                 "toc_start": 1,
                 "toc_end": page_count,
-                "inject_toc_page": True,
+                "inject_toc_page": False,
                 "provider_id": None,
                 "page_count": page_count,
                 "created_at": now,
@@ -187,7 +187,7 @@ class ProjectRepository:
         normalized["toc_start"] = int(normalized.get("toc_start") or 1)
         normalized["toc_end"] = int(normalized.get("toc_end") or page_count)
         normalized["provider_id"] = normalized.get("provider_id") or None
-        normalized["inject_toc_page"] = bool(normalized.get("inject_toc_page", True))
+        normalized["inject_toc_page"] = bool(normalized.get("inject_toc_page", False))
         return normalized
 
     def initial_toc_text(self, toc_bytes: bytes | None) -> str:
